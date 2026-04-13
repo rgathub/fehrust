@@ -79,6 +79,98 @@ pub struct Options {
     /// Start at a specific file
     #[arg(long)]
     pub start_at: Option<String>,
+
+    /// List mode: print file info to stdout and exit
+    #[arg(short = 'L', long)]
+    pub list: bool,
+
+    /// Format string for --list output (default: "%f\t%wx%h\t%s")
+    #[arg(long, default_value = "%f\t%wx%h\t%s")]
+    pub list_format: String,
+
+    /// Custom list mode: print file info using provided format string and exit
+    #[arg(long)]
+    pub customlist: Option<String>,
+
+    /// Print only loadable image paths to stdout and exit
+    #[arg(long)]
+    pub loadable: bool,
+
+    /// Print only unloadable image paths to stdout and exit
+    #[arg(long)]
+    pub unloadable: bool,
+
+    /// Minimum image dimensions (WxH) filter
+    #[arg(long)]
+    pub min_dimension: Option<String>,
+
+    /// Maximum image dimensions (WxH) filter
+    #[arg(long)]
+    pub max_dimension: Option<String>,
+
+    /// Load file list from a text file (one path per line)
+    #[arg(long)]
+    pub filelist: Option<String>,
+
+    /// Save the collected file list to a text file
+    #[arg(long)]
+    pub filelist_save: Option<String>,
+
+    /// Auto-reload when files change on disk
+    #[arg(long)]
+    pub auto_reload: bool,
+
+    /// Default action command (executed on Enter). Use %f=filepath, %n=filename, %u=index, %l=total
+    #[arg(long = "action")]
+    pub action: Option<String>,
+
+    /// Action 1 (key 1)
+    #[arg(long = "action1")]
+    pub action1: Option<String>,
+    /// Action 2 (key 2)
+    #[arg(long = "action2")]
+    pub action2: Option<String>,
+    /// Action 3 (key 3)
+    #[arg(long = "action3")]
+    pub action3: Option<String>,
+    /// Action 4 (key 4)
+    #[arg(long = "action4")]
+    pub action4: Option<String>,
+    /// Action 5 (key 5)
+    #[arg(long = "action5")]
+    pub action5: Option<String>,
+    /// Action 6 (key 6)
+    #[arg(long = "action6")]
+    pub action6: Option<String>,
+    /// Action 7 (key 7)
+    #[arg(long = "action7")]
+    pub action7: Option<String>,
+    /// Action 8 (key 8)
+    #[arg(long = "action8")]
+    pub action8: Option<String>,
+    /// Action 9 (key 9)
+    #[arg(long = "action9")]
+    pub action9: Option<String>,
+
+    /// Path to caption files directory. For image.jpg, reads {caption_path}/image.txt
+    #[arg(long)]
+    pub caption_path: Option<String>,
+
+    /// Custom key binding in format "key action" (e.g. "q quit", "n next")
+    #[arg(long = "key-binding", number_of_values = 1)]
+    pub key_binding: Vec<String>,
+
+    /// Start in thumbnail grid mode
+    #[arg(short = 't', long)]
+    pub thumbnails: bool,
+
+    /// Open each file in its own window
+    #[arg(long)]
+    pub multiwindow: bool,
+
+    /// Show contact sheet / index view
+    #[arg(long)]
+    pub index: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -103,6 +195,21 @@ impl Options {
             "hold" => OnLastSlide::Hold,
             _ => OnLastSlide::Resume,
         }
+    }
+
+    /// Return numbered actions as a Vec (index 0 = action1, etc.)
+    pub fn numbered_actions(&self) -> Vec<Option<String>> {
+        vec![
+            self.action1.clone(),
+            self.action2.clone(),
+            self.action3.clone(),
+            self.action4.clone(),
+            self.action5.clone(),
+            self.action6.clone(),
+            self.action7.clone(),
+            self.action8.clone(),
+            self.action9.clone(),
+        ]
     }
 
     pub fn parse_geometry(&self) -> Option<(u32, u32, Option<i32>, Option<i32>)> {
@@ -132,5 +239,17 @@ impl Options {
         };
 
         Some((w, h, ox, oy))
+    }
+
+    /// Parse a "WxH" dimension string into (width, height).
+    pub fn parse_dimension(s: &Option<String>) -> Option<(u32, u32)> {
+        let s = s.as_ref()?;
+        let parts: Vec<&str> = s.split('x').collect();
+        if parts.len() != 2 {
+            return None;
+        }
+        let w: u32 = parts[0].parse().ok()?;
+        let h: u32 = parts[1].parse().ok()?;
+        Some((w, h))
     }
 }

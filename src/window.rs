@@ -10,6 +10,7 @@ use windows::{
 use std::cell::RefCell;
 
 use crate::app::AppState;
+use crate::filewatcher;
 use crate::input;
 use crate::menu;
 
@@ -23,6 +24,45 @@ thread_local! {
 
 pub fn set_app_state(state: *mut AppState) {
     APP_STATE.with(|s| *s.borrow_mut() = Some(state));
+}
+
+/// Set per-monitor DPI awareness. Tries V2, then V1, then legacy.
+pub fn set_dpi_awareness() {
+    use windows::Win32::UI::HiDpi::*;
+    unsafe {
+        // Try V2 first
+        if SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2).is_ok() {
+            return;
+        }
+        // Fall back to V1
+        if SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE).is_ok() {
+            return;
+        }
+        // Legacy fallback
+        let _ = SetProcessDPIAware();
+    }
+}
+
+/// Get monitor info for the monitor containing the given window.
+fn get_monitor_rect(hwnd: HWND) -> RECT {
+    unsafe {
+        let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        let mut mi = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        if GetMonitorInfoW(monitor, &mut mi).as_bool() {
+            mi.rcMonitor
+        } else {
+            // Fallback to primary screen
+            RECT {
+                left: 0,
+                top: 0,
+                right: GetSystemMetrics(SM_CXSCREEN),
+                bottom: GetSystemMetrics(SM_CYSCREEN),
+            }
+        }
+    }
 }
 
 pub fn create_window(
@@ -149,17 +189,16 @@ pub fn toggle_fullscreen(hwnd: HWND, is_fullscreen: &mut bool, saved_rect: &mut 
         } else {
             // Save current rect
             let _ = GetWindowRect(hwnd, saved_rect);
-            // Go fullscreen
-            let screen_w = GetSystemMetrics(SM_CXSCREEN);
-            let screen_h = GetSystemMetrics(SM_CYSCREEN);
+            // Go fullscreen on the monitor where the window currently lives
+            let monitor_rect = get_monitor_rect(hwnd);
             SetWindowLongW(hwnd, GWL_STYLE, (WS_POPUP | WS_VISIBLE).0 as i32);
             let _ = SetWindowPos(
                 hwnd,
                 Some(HWND_TOP),
-                0,
-                0,
-                screen_w,
-                screen_h,
+                monitor_rect.left,
+                monitor_rect.top,
+                monitor_rect.right - monitor_rect.left,
+                monitor_rect.bottom - monitor_rect.top,
                 SWP_FRAMECHANGED,
             );
             *is_fullscreen = true;
@@ -228,6 +267,29 @@ unsafe extern "system" fn wnd_proc(
                 input::handle_mouse_up(state);
                 LRESULT(0)
             }
+            WM_LBUTTONDBLCLK => {
+                // Double-click in thumbnail mode opens the image
+                if state.thumbnail_view.is_some() {
+                    let x = (lparam.0 & 0xFFFF) as i16 as i32;
+                    let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
+                    let mut rect = RECT::default();
+                    unsafe {
+                        let _ = GetClientRect(hwnd, &mut rect);
+                    }
+                    let vw = (rect.right - rect.left) as f32;
+                    if let Some(ref thumb_view) = state.thumbnail_view {
+                        if let Some(idx) = thumb_view.handle_click(x as f32, y as f32, vw) {
+                            if idx < state.filelist.len() {
+                                state.thumbnail_view = None;
+                                state.filelist.set_current(idx);
+                                state.load_current_image();
+                                invalidate(hwnd);
+                            }
+                        }
+                    }
+                }
+                LRESULT(0)
+            }
             WM_RBUTTONUP => {
                 menu::show_context_menu(hwnd);
                 LRESULT(0)
@@ -253,6 +315,50 @@ unsafe extern "system" fn wnd_proc(
             WM_TIMER => {
                 state.handle_timer();
                 invalidate(hwnd);
+                LRESULT(0)
+            }
+            WM_DPICHANGED => {
+                // wparam: LOWORD = new X dpi, HIWORD = new Y dpi
+                let new_dpi = (wparam.0 & 0xFFFF) as u32;
+                state.dpi_scale = new_dpi as f32 / 96.0;
+
+                // lparam points to a suggested RECT for the window
+                let suggested_rect = unsafe { &*(lparam.0 as *const RECT) };
+                unsafe {
+                    let _ = SetWindowPos(
+                        hwnd,
+                        None,
+                        suggested_rect.left,
+                        suggested_rect.top,
+                        suggested_rect.right - suggested_rect.left,
+                        suggested_rect.bottom - suggested_rect.top,
+                        SWP_NOZORDER | SWP_NOACTIVATE,
+                    );
+                }
+                invalidate(hwnd);
+                LRESULT(0)
+            }
+            x if x == filewatcher::WM_FILE_CHANGED => {
+                // File system change detected — reload file list and current image
+                let recursive = state.options.recursive;
+                let files = state.options.files.clone();
+                let sort = state.options.sort.clone();
+                let reverse = state.options.reverse;
+                let current_path = state.filelist.current().map(|f| f.path.clone());
+
+                let mut new_filelist = crate::filelist::FileList::collect(&files, recursive);
+                new_filelist.sort_by(&sort, reverse);
+
+                // Try to stay on the same file
+                if let Some(ref path) = current_path {
+                    new_filelist.jump_to(&path.to_string_lossy());
+                }
+
+                if !new_filelist.is_empty() {
+                    state.filelist = new_filelist;
+                    state.load_current_image();
+                    invalidate(hwnd);
+                }
                 LRESULT(0)
             }
             WM_DESTROY => {

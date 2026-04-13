@@ -1,7 +1,16 @@
 use crate::app::AppState;
+use crate::config::ViewMode;
 
 pub fn build_info_string(state: &AppState) -> String {
     let mut lines = Vec::new();
+
+    // Mode indicator
+    match state.mode {
+        ViewMode::Zoom => lines.push("Mode: ZOOM (drag up/down)".to_string()),
+        ViewMode::Rotate => lines.push("Mode: ROTATE (drag left/right)".to_string()),
+        ViewMode::Pan => lines.push("Mode: PAN".to_string()),
+        ViewMode::Normal => {}
+    }
 
     // Filename
     if let Some(file) = state.filelist.current() {
@@ -37,6 +46,12 @@ pub fn build_info_string(state: &AppState) -> String {
             lines.push(String::new());
             lines.push(summary);
         }
+    }
+
+    // Caption
+    if let Some(ref caption) = state.current_caption {
+        lines.push(String::new());
+        lines.push(format!("Caption: {}", caption));
     }
 
     lines.join("\n")

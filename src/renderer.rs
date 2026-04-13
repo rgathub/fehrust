@@ -105,6 +105,7 @@ impl Renderer {
         filename: &str,
         draw_info: bool,
         info_text: &str,
+        dpi_scale: f32,
     ) -> Result<()> {
         let rt = match &self.render_target {
             Some(rt) => rt,
@@ -190,12 +191,12 @@ impl Renderer {
 
             // Draw filename overlay (bottom bar)
             if draw_filename && !filename.is_empty() {
-                self.draw_text_overlay(rt, filename)?;
+                self.draw_text_overlay(rt, filename, dpi_scale)?;
             }
 
             // Draw info overlay (top-left box)
             if draw_info && !info_text.is_empty() {
-                self.draw_info_overlay(rt, info_text)?;
+                self.draw_info_overlay(rt, info_text, dpi_scale)?;
             }
 
             rt.EndDraw(None, None)?;
@@ -258,6 +259,7 @@ impl Renderer {
         &self,
         rt: &ID2D1HwndRenderTarget,
         text: &str,
+        dpi_scale: f32,
     ) -> Result<()> {
         unsafe {
             let rt_size = rt.GetSize();
@@ -296,11 +298,11 @@ impl Renderer {
                 windows::Win32::Graphics::DirectWrite::DWRITE_FONT_WEIGHT_NORMAL,
                 windows::Win32::Graphics::DirectWrite::DWRITE_FONT_STYLE_NORMAL,
                 windows::Win32::Graphics::DirectWrite::DWRITE_FONT_STRETCH_NORMAL,
-                14.0,
+                14.0 * dpi_scale,
                 PCWSTR(w!("en-us").as_ptr()),
             )?;
 
-            let bar_height = 24.0f32;
+            let bar_height = 24.0f32 * dpi_scale;
             let bar_y = rt_size.height - bar_height;
 
             let bg_rect = D2D_RECT_F {
@@ -334,6 +336,7 @@ impl Renderer {
         &self,
         rt: &ID2D1HwndRenderTarget,
         text: &str,
+        dpi_scale: f32,
     ) -> Result<()> {
         unsafe {
             let bg_brush = rt.CreateSolidColorBrush(
@@ -368,7 +371,7 @@ impl Renderer {
                 windows::Win32::Graphics::DirectWrite::DWRITE_FONT_WEIGHT_NORMAL,
                 windows::Win32::Graphics::DirectWrite::DWRITE_FONT_STYLE_NORMAL,
                 windows::Win32::Graphics::DirectWrite::DWRITE_FONT_STRETCH_NORMAL,
-                13.0,
+                13.0 * dpi_scale,
                 PCWSTR(w!("en-us").as_ptr()),
             )?;
 
@@ -427,5 +430,9 @@ impl Renderer {
             let size = unsafe { b.GetSize() };
             (size.width, size.height)
         })
+    }
+
+    pub fn render_target(&self) -> Option<&ID2D1HwndRenderTarget> {
+        self.render_target.as_ref()
     }
 }

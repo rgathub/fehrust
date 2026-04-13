@@ -19,6 +19,8 @@ pub const IDM_FULLSCREEN: u16 = 1011;
 pub const IDM_TOGGLE_INFO: u16 = 1012;
 pub const IDM_DELETE_LIST: u16 = 1013;
 pub const IDM_QUIT: u16 = 1014;
+pub const IDM_WALLPAPER: u16 = 1015;
+pub const IDM_SAVE: u16 = 1016;
 
 pub fn show_context_menu(hwnd: HWND) {
     unsafe {
@@ -43,6 +45,9 @@ pub fn show_context_menu(hwnd: HWND) {
             (0, ""),
             (IDM_FULLSCREEN, "Toggle Fullscreen\tF11"),
             (IDM_TOGGLE_INFO, "Toggle Info\ti"),
+            (0, ""),
+            (IDM_SAVE, "Save Copy\ts"),
+            (IDM_WALLPAPER, "Set as Wallpaper\tw"),
             (0, ""),
             (IDM_DELETE_LIST, "Delete from List\tDel"),
             (IDM_QUIT, "Quit\tQ"),
@@ -125,6 +130,51 @@ pub fn handle_menu_command(state: &mut AppState, hwnd: HWND, cmd: u16) {
         }
         IDM_DELETE_LIST => {
             state.remove_current_from_list(hwnd);
+        }
+        IDM_WALLPAPER => {
+            if let Some(file) = state.filelist.current() {
+                let path = file.path.clone();
+                match crate::wallpaper::set_wallpaper(
+                    &path,
+                    crate::wallpaper::WallpaperMode::Center,
+                ) {
+                    Ok(()) => {}
+                    Err(e) => eprintln!("Failed to set wallpaper: {e}"),
+                }
+            }
+        }
+        IDM_SAVE => {
+            let save_path = state.filelist.current().map(|f| {
+                let stem = f
+                    .path
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned();
+                let ext = f
+                    .path
+                    .extension()
+                    .map(|e| e.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let new_name = if ext.is_empty() {
+                    format!("{}_copy", stem)
+                } else {
+                    format!("{}_copy.{}", stem, ext)
+                };
+                f.path
+                    .parent()
+                    .unwrap_or(std::path::Path::new("."))
+                    .join(&new_name)
+            });
+
+            if let Some(save_path) = save_path {
+                if let Some(ref image) = state.current_image {
+                    match state.image_loader.save(image, &save_path) {
+                        Ok(()) => eprintln!("Saved: {}", save_path.display()),
+                        Err(e) => eprintln!("Save failed: {e}"),
+                    }
+                }
+            }
         }
         IDM_QUIT => unsafe {
             let _ = DestroyWindow(hwnd);

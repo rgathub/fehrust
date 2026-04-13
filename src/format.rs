@@ -64,6 +64,13 @@ pub fn expand_format(
                 Some('a') => {
                     result.push_str(if paused { "paused" } else { "playing" });
                 }
+                Some('s') => {
+                    if let Some(f) = file {
+                        if let Some(size) = f.size {
+                            result.push_str(&size.to_string());
+                        }
+                    }
+                }
                 Some('%') => {
                     result.push('%');
                 }

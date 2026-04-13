@@ -59,11 +59,34 @@ impl FileList {
         }
     }
 
+    /// Create a FileList from a single file
+    pub fn from_single(file: FehFile) -> Self {
+        Self {
+            files: vec![file],
+            current: 0,
+        }
+    }
+
     /// Collect files from a list of paths (files and/or directories)
     pub fn collect(paths: &[String], recursive: bool) -> Self {
         let mut files = Vec::new();
 
         for path_str in paths {
+            // Handle HTTP/HTTPS URLs
+            if path_str.starts_with("http://") || path_str.starts_with("https://") {
+                match crate::http::fetch_image(path_str) {
+                    Ok(local_path) => {
+                        if is_image_file(&local_path) {
+                            files.push(FehFile::new(local_path));
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to fetch {}: {}", path_str, e);
+                    }
+                }
+                continue;
+            }
+
             let path = PathBuf::from(path_str);
             if path.is_file() {
                 if is_image_file(&path) {
@@ -199,6 +222,16 @@ impl FileList {
         self.files.is_empty()
     }
 
+    pub fn file_at(&self, index: usize) -> Option<&FehFile> {
+        self.files.get(index)
+    }
+
+    pub fn set_current(&mut self, index: usize) {
+        if index < self.files.len() {
+            self.current = index;
+        }
+    }
+
     pub fn next(&mut self) -> bool {
         if self.files.is_empty() {
             return false;
@@ -258,5 +291,83 @@ impl FileList {
             self.current = self.files.len() - 1;
         }
         !self.files.is_empty()
+    }
+
+    /// Get a shared reference to the file list
+    pub fn files(&self) -> &[FehFile] {
+        &self.files
+    }
+
+    /// Get a mutable reference to the file list
+    pub fn files_mut(&mut self) -> &mut Vec<FehFile> {
+        &mut self.files
+    }
+
+    /// Retain only files matching a predicate
+    pub fn retain<F>(&mut self, f: F)
+    where
+        F: FnMut(&FehFile) -> bool,
+    {
+        self.files.retain(f);
+        if self.current >= self.files.len() && !self.files.is_empty() {
+            self.current = self.files.len() - 1;
+        } else if self.files.is_empty() {
+            self.current = 0;
+        }
+    }
+
+    /// Load file paths from a text file (one per line), keeping only image files
+    pub fn from_filelist(path: &Path) -> Self {
+        let content = std::fs::read_to_string(path).unwrap_or_default();
+        let files: Vec<FehFile> = content
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| PathBuf::from(l.trim()))
+            .filter(|p| p.is_file() && is_image_file(p))
+            .map(FehFile::new)
+            .collect();
+        Self { files, current: 0 }
+    }
+
+    /// Save file paths to a text file (one per line)
+    pub fn save_filelist(&self, path: &Path) -> std::io::Result<()> {
+        use std::io::Write;
+        let mut f = std::fs::File::create(path)?;
+        for file in &self.files {
+            writeln!(f, "{}", file.path.display())?;
+        }
+        Ok(())
+    }
+
+    /// Filter files by image dimensions
+    pub fn filter_dimensions(
+        &mut self,
+        loader: &crate::image_loader::ImageLoader,
+        min: Option<(u32, u32)>,
+        max: Option<(u32, u32)>,
+    ) {
+        self.files.retain(|f| {
+            match loader.get_dimensions(&f.path) {
+                Ok((w, h)) => {
+                    if let Some((min_w, min_h)) = min {
+                        if w < min_w || h < min_h {
+                            return false;
+                        }
+                    }
+                    if let Some((max_w, max_h)) = max {
+                        if w > max_w || h > max_h {
+                            return false;
+                        }
+                    }
+                    true
+                }
+                Err(_) => true, // keep files we can't read
+            }
+        });
+        if self.current >= self.files.len() && !self.files.is_empty() {
+            self.current = self.files.len() - 1;
+        } else if self.files.is_empty() {
+            self.current = 0;
+        }
     }
 }
