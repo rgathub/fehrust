@@ -3,8 +3,6 @@ use windows::{
     Win32::UI::Input::KeyboardAndMouse::*, Win32::UI::WindowsAndMessaging::*, core::*,
 };
 
-use std::cell::RefCell;
-
 use crate::app::AppState;
 use crate::filewatcher;
 use crate::input;
@@ -13,13 +11,21 @@ use crate::menu;
 /// Window class name
 const CLASS_NAME: &str = "FehRustWindow";
 
-thread_local! {
-    /// Store a pointer to AppState for the WndProc callback
-    static APP_STATE: RefCell<Option<*mut AppState>> = const { RefCell::new(None) };
+/// Associate an AppState pointer with a window via GWLP_USERDATA.
+pub fn set_app_state(hwnd: HWND, state: *mut AppState) {
+    unsafe {
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, state as isize);
+    }
 }
 
-pub fn set_app_state(state: *mut AppState) {
-    APP_STATE.with(|s| *s.borrow_mut() = Some(state));
+/// Retrieve the AppState pointer for a window.
+unsafe fn get_app_state(hwnd: HWND) -> Option<&'static mut AppState> {
+    let ptr = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut AppState;
+    if ptr.is_null() {
+        None
+    } else {
+        Some(unsafe { &mut *ptr })
+    }
 }
 
 /// Set per-monitor DPI awareness. Tries V2, then V1, then legacy.
@@ -205,160 +211,157 @@ unsafe extern "system" fn wnd_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    APP_STATE.with(|state_cell| {
-        let state_opt = state_cell.borrow();
-        let state = match *state_opt {
-            Some(ptr) => unsafe { &mut *ptr },
-            None => return unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
-        };
+    let state = match unsafe { get_app_state(hwnd) } {
+        Some(s) => s,
+        None => return unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+    };
 
-        match msg {
-            WM_PAINT => {
-                let _ = state.paint();
-                let mut ps = PAINTSTRUCT::default();
-                unsafe {
-                    let _ = BeginPaint(hwnd, &mut ps);
-                    let _ = EndPaint(hwnd, &ps);
-                }
-                LRESULT(0)
+    match msg {
+        WM_PAINT => {
+            let _ = state.paint();
+            let mut ps = PAINTSTRUCT::default();
+            unsafe {
+                let _ = BeginPaint(hwnd, &mut ps);
+                let _ = EndPaint(hwnd, &ps);
             }
-            WM_SIZE => {
-                let width = (lparam.0 & 0xFFFF) as u32;
-                let height = ((lparam.0 >> 16) & 0xFFFF) as u32;
-                if width > 0 && height > 0 {
-                    let _ = state.handle_resize(width, height);
-                }
-                LRESULT(0)
+            LRESULT(0)
+        }
+        WM_SIZE => {
+            let width = (lparam.0 & 0xFFFF) as u32;
+            let height = ((lparam.0 >> 16) & 0xFFFF) as u32;
+            if width > 0 && height > 0 {
+                let _ = state.handle_resize(width, height);
             }
-            WM_KEYDOWN => {
-                let vk = VIRTUAL_KEY(wparam.0 as u16);
-                input::handle_key(state, hwnd, vk);
-                LRESULT(0)
+            LRESULT(0)
+        }
+        WM_KEYDOWN => {
+            let vk = VIRTUAL_KEY(wparam.0 as u16);
+            input::handle_key(state, hwnd, vk);
+            LRESULT(0)
+        }
+        WM_MOUSEWHEEL => {
+            let delta = ((wparam.0 >> 16) & 0xFFFF) as i16;
+            let keys = (wparam.0 & 0xFFFF) as u16;
+            let ctrl = keys & 0x0008 != 0; // MK_CONTROL
+            input::handle_mouse_wheel(state, hwnd, delta, ctrl);
+            LRESULT(0)
+        }
+        WM_LBUTTONDOWN => {
+            let x = (lparam.0 & 0xFFFF) as i16 as i32;
+            let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
+            input::handle_mouse_down(state, hwnd, x, y);
+            LRESULT(0)
+        }
+        WM_MOUSEMOVE => {
+            let x = (lparam.0 & 0xFFFF) as i16 as i32;
+            let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
+            if wparam.0 & 0x0001 != 0 {
+                // MK_LBUTTON
+                input::handle_mouse_drag(state, hwnd, x, y);
             }
-            WM_MOUSEWHEEL => {
-                let delta = ((wparam.0 >> 16) & 0xFFFF) as i16;
-                let keys = (wparam.0 & 0xFFFF) as u16;
-                let ctrl = keys & 0x0008 != 0; // MK_CONTROL
-                input::handle_mouse_wheel(state, hwnd, delta, ctrl);
-                LRESULT(0)
-            }
-            WM_LBUTTONDOWN => {
+            LRESULT(0)
+        }
+        WM_LBUTTONUP => {
+            input::handle_mouse_up(state);
+            LRESULT(0)
+        }
+        WM_LBUTTONDBLCLK => {
+            // Double-click in thumbnail mode opens the image
+            if state.thumbnail_view.is_some() {
                 let x = (lparam.0 & 0xFFFF) as i16 as i32;
                 let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
-                input::handle_mouse_down(state, hwnd, x, y);
-                LRESULT(0)
-            }
-            WM_MOUSEMOVE => {
-                let x = (lparam.0 & 0xFFFF) as i16 as i32;
-                let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
-                if wparam.0 & 0x0001 != 0 {
-                    // MK_LBUTTON
-                    input::handle_mouse_drag(state, hwnd, x, y);
-                }
-                LRESULT(0)
-            }
-            WM_LBUTTONUP => {
-                input::handle_mouse_up(state);
-                LRESULT(0)
-            }
-            WM_LBUTTONDBLCLK => {
-                // Double-click in thumbnail mode opens the image
-                if state.thumbnail_view.is_some() {
-                    let x = (lparam.0 & 0xFFFF) as i16 as i32;
-                    let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
-                    let mut rect = RECT::default();
-                    unsafe {
-                        let _ = GetClientRect(hwnd, &mut rect);
-                    }
-                    let vw = (rect.right - rect.left) as f32;
-                    if let Some(ref thumb_view) = state.thumbnail_view
-                        && let Some(idx) = thumb_view.handle_click(x as f32, y as f32, vw)
-                        && idx < state.filelist.len()
-                    {
-                        state.thumbnail_view = None;
-                        state.filelist.set_current(idx);
-                        state.load_current_image();
-                        invalidate(hwnd);
-                    }
-                }
-                LRESULT(0)
-            }
-            WM_RBUTTONUP => {
-                menu::show_context_menu(hwnd);
-                LRESULT(0)
-            }
-            WM_SETCURSOR => {
-                if state.options.hide_pointer {
-                    let hit_test = (lparam.0 & 0xFFFF) as u16;
-                    if hit_test == 1 {
-                        // HTCLIENT
-                        unsafe {
-                            SetCursor(None);
-                        }
-                        return LRESULT(1);
-                    }
-                }
-                unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
-            }
-            WM_COMMAND => {
-                let cmd = (wparam.0 & 0xFFFF) as u16;
-                menu::handle_menu_command(state, hwnd, cmd);
-                LRESULT(0)
-            }
-            WM_TIMER => {
-                state.handle_timer();
-                invalidate(hwnd);
-                LRESULT(0)
-            }
-            WM_DPICHANGED => {
-                // wparam: LOWORD = new X dpi, HIWORD = new Y dpi
-                let new_dpi = (wparam.0 & 0xFFFF) as u32;
-                state.dpi_scale = new_dpi as f32 / 96.0;
-
-                // lparam points to a suggested RECT for the window
-                let suggested_rect = unsafe { &*(lparam.0 as *const RECT) };
+                let mut rect = RECT::default();
                 unsafe {
-                    let _ = SetWindowPos(
-                        hwnd,
-                        None,
-                        suggested_rect.left,
-                        suggested_rect.top,
-                        suggested_rect.right - suggested_rect.left,
-                        suggested_rect.bottom - suggested_rect.top,
-                        SWP_NOZORDER | SWP_NOACTIVATE,
-                    );
+                    let _ = GetClientRect(hwnd, &mut rect);
                 }
-                invalidate(hwnd);
-                LRESULT(0)
-            }
-            x if x == filewatcher::WM_FILE_CHANGED => {
-                // File system change detected — reload file list and current image
-                let recursive = state.options.recursive;
-                let files = state.options.files.clone();
-                let sort = state.options.sort.clone();
-                let reverse = state.options.reverse;
-                let current_path = state.filelist.current().map(|f| f.path.clone());
-
-                let mut new_filelist = crate::filelist::FileList::collect(&files, recursive);
-                new_filelist.sort_by(&sort, reverse);
-
-                // Try to stay on the same file
-                if let Some(ref path) = current_path {
-                    new_filelist.jump_to(&path.to_string_lossy());
-                }
-
-                if !new_filelist.is_empty() {
-                    state.filelist = new_filelist;
+                let vw = (rect.right - rect.left) as f32;
+                if let Some(ref thumb_view) = state.thumbnail_view
+                    && let Some(idx) = thumb_view.handle_click(x as f32, y as f32, vw)
+                    && idx < state.filelist.len()
+                {
+                    state.thumbnail_view = None;
+                    state.filelist.set_current(idx);
                     state.load_current_image();
                     invalidate(hwnd);
                 }
-                LRESULT(0)
             }
-            WM_DESTROY => {
-                unsafe { PostQuitMessage(0) };
-                LRESULT(0)
-            }
-            _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+            LRESULT(0)
         }
-    })
+        WM_RBUTTONUP => {
+            menu::show_context_menu(hwnd);
+            LRESULT(0)
+        }
+        WM_SETCURSOR => {
+            if state.options.hide_pointer {
+                let hit_test = (lparam.0 & 0xFFFF) as u16;
+                if hit_test == 1 {
+                    // HTCLIENT
+                    unsafe {
+                        SetCursor(None);
+                    }
+                    return LRESULT(1);
+                }
+            }
+            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+        }
+        WM_COMMAND => {
+            let cmd = (wparam.0 & 0xFFFF) as u16;
+            menu::handle_menu_command(state, hwnd, cmd);
+            LRESULT(0)
+        }
+        WM_TIMER => {
+            state.handle_timer();
+            invalidate(hwnd);
+            LRESULT(0)
+        }
+        WM_DPICHANGED => {
+            // wparam: LOWORD = new X dpi, HIWORD = new Y dpi
+            let new_dpi = (wparam.0 & 0xFFFF) as u32;
+            state.dpi_scale = new_dpi as f32 / 96.0;
+
+            // lparam points to a suggested RECT for the window
+            let suggested_rect = unsafe { &*(lparam.0 as *const RECT) };
+            unsafe {
+                let _ = SetWindowPos(
+                    hwnd,
+                    None,
+                    suggested_rect.left,
+                    suggested_rect.top,
+                    suggested_rect.right - suggested_rect.left,
+                    suggested_rect.bottom - suggested_rect.top,
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            }
+            invalidate(hwnd);
+            LRESULT(0)
+        }
+        x if x == filewatcher::WM_FILE_CHANGED => {
+            // File system change detected — reload file list and current image
+            let recursive = state.options.recursive;
+            let files = state.options.files.clone();
+            let sort = state.options.sort.clone();
+            let reverse = state.options.reverse;
+            let current_path = state.filelist.current().map(|f| f.path.clone());
+
+            let mut new_filelist = crate::filelist::FileList::collect(&files, recursive);
+            new_filelist.sort_by(&sort, reverse);
+
+            // Try to stay on the same file
+            if let Some(ref path) = current_path {
+                new_filelist.jump_to(&path.to_string_lossy());
+            }
+
+            if !new_filelist.is_empty() {
+                state.filelist = new_filelist;
+                state.load_current_image();
+                invalidate(hwnd);
+            }
+            LRESULT(0)
+        }
+        WM_DESTROY => {
+            unsafe { PostQuitMessage(0) };
+            LRESULT(0)
+        }
+        _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+    }
 }

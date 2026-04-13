@@ -275,10 +275,12 @@ impl ThumbnailView {
     }
 }
 
-fn truncate_name(name: &str, max_len: usize) -> String {
-    if name.len() <= max_len {
-        name.to_string()
+fn truncate_name(name: &str, max_chars: usize) -> String {
+    let mut chars = name.chars();
+    let truncated: String = chars.by_ref().take(max_chars - 1).collect();
+    if chars.next().is_some() {
+        format!("{truncated}…")
     } else {
-        format!("{}…", &name[..max_len - 1])
+        name.to_string()
     }
 }

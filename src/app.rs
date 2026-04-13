@@ -417,7 +417,7 @@ pub fn run(options: Options) -> windows::core::Result<()> {
     }
 
     // Store state pointer for WndProc
-    window::set_app_state(&mut state as *mut AppState);
+    window::set_app_state(hwnd, &mut state as *mut AppState);
 
     // Initial paint
     window::invalidate(hwnd);
@@ -588,8 +588,8 @@ pub fn run_multiwindow(options: Options) -> windows::core::Result<()> {
         states.push(state);
     }
 
-    if let Some(first) = states.first_mut() {
-        window::set_app_state(first as *mut AppState);
+    for state in &mut states {
+        window::set_app_state(state.hwnd, state as *mut AppState);
     }
 
     for state in &states {

@@ -31,7 +31,7 @@ pub fn set_wallpaper(path: &Path, mode: WallpaperMode) -> Result<()> {
         WallpaperMode::Span => ("22", "0"),
         WallpaperMode::Tile => ("0", "1"),
     };
-    set_registry_wallpaper_style(style, tile);
+    set_registry_wallpaper_style(style, tile)?;
 
     let path_wide: Vec<u16> = abs_path
         .as_os_str()
@@ -52,41 +52,51 @@ pub fn set_wallpaper(path: &Path, mode: WallpaperMode) -> Result<()> {
     Ok(())
 }
 
-fn set_registry_wallpaper_style(style: &str, tile: &str) {
+fn set_registry_wallpaper_style(style: &str, tile: &str) -> Result<()> {
     unsafe {
         let subkey: Vec<u16> = "Control Panel\\Desktop\0".encode_utf16().collect();
         let mut hkey = HKEY::default();
-        let res = RegOpenKeyExW(
+        RegOpenKeyExW(
             HKEY_CURRENT_USER,
             PCWSTR(subkey.as_ptr()),
             Some(0),
             KEY_SET_VALUE,
             &mut hkey,
-        );
-        if res.is_err() {
-            return;
-        }
+        )
+        .ok()
+        .map_err(|_| Error::new(E_FAIL, "Failed to open Desktop registry key"))?;
 
         let style_name: Vec<u16> = "WallpaperStyle\0".encode_utf16().collect();
         let style_val: Vec<u8> = style.bytes().chain(std::iter::once(0)).collect();
-        let _ = RegSetValueExW(
+        RegSetValueExW(
             hkey,
             PCWSTR(style_name.as_ptr()),
             Some(0),
             REG_SZ,
             Some(&style_val),
-        );
+        )
+        .ok()
+        .map_err(|_| {
+            let _ = RegCloseKey(hkey);
+            Error::new(E_FAIL, "Failed to set WallpaperStyle registry value")
+        })?;
 
         let tile_name: Vec<u16> = "TileWallpaper\0".encode_utf16().collect();
         let tile_val: Vec<u8> = tile.bytes().chain(std::iter::once(0)).collect();
-        let _ = RegSetValueExW(
+        RegSetValueExW(
             hkey,
             PCWSTR(tile_name.as_ptr()),
             Some(0),
             REG_SZ,
             Some(&tile_val),
-        );
+        )
+        .ok()
+        .map_err(|_| {
+            let _ = RegCloseKey(hkey);
+            Error::new(E_FAIL, "Failed to set TileWallpaper registry value")
+        })?;
 
         let _ = RegCloseKey(hkey);
+        Ok(())
     }
 }

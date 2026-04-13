@@ -152,3 +152,11 @@ impl ImageLoader {
         &self.wic_factory
     }
 }
+
+impl Drop for ImageLoader {
+    fn drop(&mut self) {
+        unsafe {
+            CoUninitialize();
+        }
+    }
+}
