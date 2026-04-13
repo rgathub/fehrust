@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Run tests
+        run: cargo test
+
+      - name: Package release
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}"
+          $dir = "fehrust-${version}-windows-x86_64"
+          New-Item -ItemType Directory -Path $dir
+          Copy-Item target/release/fehrust.exe $dir/
+          Copy-Item README.md $dir/
+          Copy-Item LICENSE* $dir/ -ErrorAction SilentlyContinue
+          Compress-Archive -Path $dir -DestinationPath "${dir}.zip"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: fehrust-*.zip
