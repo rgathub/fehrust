@@ -97,10 +97,10 @@ impl AppState {
         }
 
         // Save filelist if requested
-        if let Some(ref save_path) = options.filelist_save {
-            if let Err(e) = filelist.save_filelist(Path::new(save_path)) {
-                eprintln!("Failed to save filelist: {e}");
-            }
+        if let Some(ref save_path) = options.filelist_save
+            && let Err(e) = filelist.save_filelist(Path::new(save_path))
+        {
+            eprintln!("Failed to save filelist: {e}");
         }
 
         // Jump to start-at file
@@ -154,15 +154,15 @@ impl AppState {
             let exif_info = exif::read_exif(&file.path);
 
             // Load caption if caption_path is set
-            if let Some(ref caption_path) = self.options.caption_path {
-                if let Some(stem) = file.path.file_stem() {
-                    let caption_file =
-                        Path::new(caption_path).join(format!("{}.txt", stem.to_string_lossy()));
-                    if let Ok(text) = std::fs::read_to_string(&caption_file) {
-                        let trimmed = text.trim().to_string();
-                        if !trimmed.is_empty() {
-                            self.current_caption = Some(trimmed);
-                        }
+            if let Some(ref caption_path) = self.options.caption_path
+                && let Some(stem) = file.path.file_stem()
+            {
+                let caption_file =
+                    Path::new(caption_path).join(format!("{}.txt", stem.to_string_lossy()));
+                if let Ok(text) = std::fs::read_to_string(&caption_file) {
+                    let trimmed = text.trim().to_string();
+                    if !trimmed.is_empty() {
+                        self.current_caption = Some(trimmed);
                     }
                 }
             }
@@ -179,14 +179,13 @@ impl AppState {
                     self.zoom_to_fit();
 
                     // Apply EXIF auto-rotation
-                    if let Some(ref exif) = exif_info {
-                        if exif.orientation != 1 {
-                            let (rot, fh, fv) =
-                                exif::exif_orientation_to_rotation(exif.orientation);
-                            self.rotation = rot;
-                            self.flip_h = fh;
-                            self.flip_v = fv;
-                        }
+                    if let Some(ref exif) = exif_info
+                        && exif.orientation != 1
+                    {
+                        let (rot, fh, fv) = exif::exif_orientation_to_rotation(exif.orientation);
+                        self.rotation = rot;
+                        self.flip_h = fh;
+                        self.flip_v = fv;
                     }
                 }
                 Err(e) => {
@@ -202,17 +201,18 @@ impl AppState {
     }
 
     pub fn zoom_to_fit(&mut self) {
-        if let Some(ref img) = self.current_image {
-            if self.window_width > 0 && self.window_height > 0 {
-                self.zoom = transforms::fit_zoom(
-                    img.width as f64,
-                    img.height as f64,
-                    self.window_width as f64,
-                    self.window_height as f64,
-                );
-                self.pan_x = 0.0;
-                self.pan_y = 0.0;
-            }
+        if let Some(ref img) = self.current_image
+            && self.window_width > 0
+            && self.window_height > 0
+        {
+            self.zoom = transforms::fit_zoom(
+                img.width as f64,
+                img.height as f64,
+                self.window_width as f64,
+                self.window_height as f64,
+            );
+            self.pan_x = 0.0;
+            self.pan_y = 0.0;
         }
     }
 
@@ -423,12 +423,11 @@ pub fn run(options: Options) -> windows::core::Result<()> {
     window::invalidate(hwnd);
 
     // Start file watcher if --auto-reload is set
-    if auto_reload {
-        if let Some(file) = state.filelist.current() {
-            if let Some(parent) = file.path.parent() {
-                crate::filewatcher::start_watcher(parent.to_path_buf(), hwnd);
-            }
-        }
+    if auto_reload
+        && let Some(file) = state.filelist.current()
+        && let Some(parent) = file.path.parent()
+    {
+        crate::filewatcher::start_watcher(parent.to_path_buf(), hwnd);
     }
 
     // Enter message loop

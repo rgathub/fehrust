@@ -90,6 +90,7 @@ impl Renderer {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &self,
         zoom: f64,
@@ -230,7 +231,11 @@ impl Renderer {
                 let mut row = 0u32;
                 let mut cy = rect.top;
                 while cy < rect.bottom {
-                    let brush = if (row + col) % 2 == 0 { &light } else { &dark };
+                    let brush = if (row + col).is_multiple_of(2) {
+                        &light
+                    } else {
+                        &dark
+                    };
                     let cell = D2D_RECT_F {
                         left: cx,
                         top: cy,

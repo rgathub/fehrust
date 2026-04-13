@@ -13,6 +13,7 @@ use crate::filelist::FehFile;
 ///   %v — program version
 ///   %a — "playing" or "paused"
 ///   %% — literal %
+#[allow(clippy::too_many_arguments)]
 pub fn expand_format(
     fmt: &str,
     file: Option<&FehFile>,
@@ -65,10 +66,10 @@ pub fn expand_format(
                     result.push_str(if paused { "paused" } else { "playing" });
                 }
                 Some('s') => {
-                    if let Some(f) = file {
-                        if let Some(size) = f.size {
-                            result.push_str(&size.to_string());
-                        }
+                    if let Some(f) = file
+                        && let Some(size) = f.size
+                    {
+                        result.push_str(&size.to_string());
                     }
                 }
                 Some('%') => {

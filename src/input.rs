@@ -86,13 +86,11 @@ pub fn handle_key(state: &mut AppState, hwnd: HWND, vk: VIRTUAL_KEY) {
     }
 
     // Escape exits interactive modes before quitting
-    if vk == VK_ESCAPE {
-        if state.mode == ViewMode::Zoom || state.mode == ViewMode::Rotate {
-            state.mode = ViewMode::Normal;
-            state.drag_start = None;
-            window::invalidate(hwnd);
-            return;
-        }
+    if vk == VK_ESCAPE && (state.mode == ViewMode::Zoom || state.mode == ViewMode::Rotate) {
+        state.mode = ViewMode::Normal;
+        state.drag_start = None;
+        window::invalidate(hwnd);
+        return;
     }
     // Check numbered action keys (1-9) — these override keybinding map when an action is set
     let action_index = match vk {
@@ -108,28 +106,28 @@ pub fn handle_key(state: &mut AppState, hwnd: HWND, vk: VIRTUAL_KEY) {
         _ => None,
     };
 
-    if let Some(idx) = action_index {
-        if let Some(Some(action_str)) = state.numbered_actions.get(idx) {
-            if let Some(file) = state.filelist.current() {
-                let file_clone = file.clone();
-                let action_str = action_str.clone();
-                let index = state.filelist.current_index();
-                let total = state.filelist.len();
-                actions::execute_action(&action_str, &file_clone, index, total);
-            }
-            return;
+    if let Some(idx) = action_index
+        && let Some(Some(action_str)) = state.numbered_actions.get(idx)
+    {
+        if let Some(file) = state.filelist.current() {
+            let file_clone = file.clone();
+            let action_str = action_str.clone();
+            let index = state.filelist.current_index();
+            let total = state.filelist.len();
+            actions::execute_action(&action_str, &file_clone, index, total);
         }
+        return;
     }
 
     // Default action on Enter
     if vk == VK_RETURN {
-        if let Some(ref action_str) = state.options.action.clone() {
-            if let Some(file) = state.filelist.current() {
-                let file_clone = file.clone();
-                let index = state.filelist.current_index();
-                let total = state.filelist.len();
-                actions::execute_action(action_str, &file_clone, index, total);
-            }
+        if let Some(ref action_str) = state.options.action.clone()
+            && let Some(file) = state.filelist.current()
+        {
+            let file_clone = file.clone();
+            let index = state.filelist.current_index();
+            let total = state.filelist.len();
+            actions::execute_action(action_str, &file_clone, index, total);
         }
         return;
     }
@@ -271,12 +269,12 @@ fn dispatch_action(action: Action, state: &mut AppState, hwnd: HWND) {
                     .join(&new_name)
             });
 
-            if let Some(save_path) = save_path {
-                if let Some(ref image) = state.current_image {
-                    match state.image_loader.save(image, &save_path) {
-                        Ok(()) => eprintln!("Saved: {}", save_path.display()),
-                        Err(e) => eprintln!("Save failed: {e}"),
-                    }
+            if let Some(save_path) = save_path
+                && let Some(ref image) = state.current_image
+            {
+                match state.image_loader.save(image, &save_path) {
+                    Ok(()) => eprintln!("Saved: {}", save_path.display()),
+                    Err(e) => eprintln!("Save failed: {e}"),
                 }
             }
         }
@@ -324,11 +322,11 @@ pub fn handle_mouse_down(state: &mut AppState, hwnd: HWND, x: i32, y: i32) {
             let _ = GetClientRect(hwnd, &mut rect);
         }
         let vw = (rect.right - rect.left) as f32;
-        if let Some(idx) = thumb_view.handle_click(x as f32, y as f32, vw) {
-            if idx < state.filelist.len() {
-                thumb_view.selected = idx;
-                window::invalidate(hwnd);
-            }
+        if let Some(idx) = thumb_view.handle_click(x as f32, y as f32, vw)
+            && idx < state.filelist.len()
+        {
+            thumb_view.selected = idx;
+            window::invalidate(hwnd);
         }
         return;
     }

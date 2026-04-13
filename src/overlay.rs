@@ -33,10 +33,10 @@ pub fn build_info_string(state: &AppState) -> String {
     ));
 
     // File size
-    if let Some(file) = state.filelist.current() {
-        if let Ok(meta) = std::fs::metadata(&file.path) {
-            lines.push(format!("Size: {}", format_file_size(meta.len())));
-        }
+    if let Some(file) = state.filelist.current()
+        && let Ok(meta) = std::fs::metadata(&file.path)
+    {
+        lines.push(format!("Size: {}", format_file_size(meta.len())));
     }
 
     // EXIF summary

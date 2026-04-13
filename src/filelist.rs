@@ -149,11 +149,11 @@ impl FileList {
                 let loader = crate::image_loader::ImageLoader::new();
                 if let Ok(loader) = loader {
                     for f in &mut self.files {
-                        if f.width.is_none() {
-                            if let Ok((w, h)) = loader.get_dimensions(&f.path) {
-                                f.width = Some(w);
-                                f.height = Some(h);
-                            }
+                        if f.width.is_none()
+                            && let Ok((w, h)) = loader.get_dimensions(&f.path)
+                        {
+                            f.width = Some(w);
+                            f.height = Some(h);
                         }
                     }
                 }
@@ -227,14 +227,13 @@ impl FileList {
         let target_name = target
             .file_name()
             .map(|n| n.to_string_lossy().to_lowercase());
-        if let Some(name) = target_name {
-            if let Some(idx) = self
+        if let Some(name) = target_name
+            && let Some(idx) = self
                 .files
                 .iter()
                 .position(|f| f.name.to_lowercase() == name)
-            {
-                self.current = idx;
-            }
+        {
+            self.current = idx;
         }
     }
 
@@ -368,15 +367,15 @@ impl FileList {
         self.files.retain(|f| {
             match loader.get_dimensions(&f.path) {
                 Ok((w, h)) => {
-                    if let Some((min_w, min_h)) = min {
-                        if w < min_w || h < min_h {
-                            return false;
-                        }
+                    if let Some((min_w, min_h)) = min
+                        && (w < min_w || h < min_h)
+                    {
+                        return false;
                     }
-                    if let Some((max_w, max_h)) = max {
-                        if w > max_w || h > max_h {
-                            return false;
-                        }
+                    if let Some((max_w, max_h)) = max
+                        && (w > max_w || h > max_h)
+                    {
+                        return false;
                     }
                     true
                 }

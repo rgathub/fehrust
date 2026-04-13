@@ -1,5 +1,4 @@
 /// Zoom/pan/rotate transform state helpers
-
 pub const ZOOM_MIN: f64 = 0.002;
 pub const ZOOM_MAX: f64 = 2000.0;
 

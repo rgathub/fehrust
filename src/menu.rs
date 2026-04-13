@@ -159,12 +159,12 @@ pub fn handle_menu_command(state: &mut AppState, hwnd: HWND, cmd: u16) {
                     .join(&new_name)
             });
 
-            if let Some(save_path) = save_path {
-                if let Some(ref image) = state.current_image {
-                    match state.image_loader.save(image, &save_path) {
-                        Ok(()) => eprintln!("Saved: {}", save_path.display()),
-                        Err(e) => eprintln!("Save failed: {e}"),
-                    }
+            if let Some(save_path) = save_path
+                && let Some(ref image) = state.current_image
+            {
+                match state.image_loader.save(image, &save_path) {
+                    Ok(()) => eprintln!("Saved: {}", save_path.display()),
+                    Err(e) => eprintln!("Save failed: {e}"),
                 }
             }
         }

@@ -271,15 +271,14 @@ unsafe extern "system" fn wnd_proc(
                         let _ = GetClientRect(hwnd, &mut rect);
                     }
                     let vw = (rect.right - rect.left) as f32;
-                    if let Some(ref thumb_view) = state.thumbnail_view {
-                        if let Some(idx) = thumb_view.handle_click(x as f32, y as f32, vw) {
-                            if idx < state.filelist.len() {
-                                state.thumbnail_view = None;
-                                state.filelist.set_current(idx);
-                                state.load_current_image();
-                                invalidate(hwnd);
-                            }
-                        }
+                    if let Some(ref thumb_view) = state.thumbnail_view
+                        && let Some(idx) = thumb_view.handle_click(x as f32, y as f32, vw)
+                        && idx < state.filelist.len()
+                    {
+                        state.thumbnail_view = None;
+                        state.filelist.set_current(idx);
+                        state.load_current_image();
+                        invalidate(hwnd);
                     }
                 }
                 LRESULT(0)

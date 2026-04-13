@@ -88,7 +88,7 @@ impl ThumbnailView {
     /// Total content height for scrolling
     pub fn total_height(&self, file_count: usize, viewport_w: f32) -> f32 {
         let cols = self.cols(viewport_w);
-        let rows = (file_count + cols - 1) / cols;
+        let rows = file_count.div_ceil(cols);
         let m = self.metrics();
         rows as f32 * m.cell_h
     }
@@ -191,14 +191,12 @@ impl ThumbnailView {
                 }
 
                 // Load thumbnail bitmap on demand
-                if !self.cache.contains_key(&idx) {
-                    if let Some(file) = filelist.file_at(idx) {
-                        if let Ok(img) = image_loader.load(&file.path) {
-                            if let Ok(bmp) = rt.CreateBitmapFromWicBitmap(&img.wic_bitmap, None) {
-                                self.cache.insert(idx, bmp);
-                            }
-                        }
-                    }
+                if !self.cache.contains_key(&idx)
+                    && let Some(file) = filelist.file_at(idx)
+                    && let Ok(img) = image_loader.load(&file.path)
+                    && let Ok(bmp) = rt.CreateBitmapFromWicBitmap(&img.wic_bitmap, None)
+                {
+                    self.cache.insert(idx, bmp);
                 }
 
                 // Draw the thumbnail
