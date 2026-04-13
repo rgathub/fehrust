@@ -68,3 +68,33 @@ fn format_file_size(bytes: u64) -> String {
         format!("{:.1} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_file_size_bytes() {
+        assert_eq!(format_file_size(512), "512 B");
+    }
+
+    #[test]
+    fn format_file_size_kb() {
+        assert_eq!(format_file_size(2048), "2.0 KB");
+    }
+
+    #[test]
+    fn format_file_size_mb() {
+        assert_eq!(format_file_size(3 * 1024 * 1024), "3.0 MB");
+    }
+
+    #[test]
+    fn format_file_size_gb() {
+        assert_eq!(format_file_size(2 * 1024 * 1024 * 1024), "2.0 GB");
+    }
+
+    #[test]
+    fn format_file_size_zero() {
+        assert_eq!(format_file_size(0), "0 B");
+    }
+}

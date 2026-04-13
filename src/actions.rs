@@ -53,3 +53,55 @@ fn expand_action(action_str: &str, file: &FehFile, index: usize, total: usize) -
 
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn test_file() -> FehFile {
+        FehFile::new(PathBuf::from("C:\\images\\photo.jpg"))
+    }
+
+    #[test]
+    fn expand_action_f() {
+        let f = test_file();
+        let result = expand_action("echo %f", &f, 0, 1);
+        assert!(result.contains("C:\\images\\photo.jpg"));
+    }
+
+    #[test]
+    fn expand_action_n() {
+        let f = test_file();
+        let result = expand_action("%n", &f, 0, 1);
+        assert_eq!(result, "photo.jpg");
+    }
+
+    #[test]
+    fn expand_action_u() {
+        let f = test_file();
+        let result = expand_action("%u", &f, 3, 10);
+        assert_eq!(result, "4");
+    }
+
+    #[test]
+    fn expand_action_l() {
+        let f = test_file();
+        let result = expand_action("%l", &f, 0, 10);
+        assert_eq!(result, "10");
+    }
+
+    #[test]
+    fn expand_action_percent() {
+        let f = test_file();
+        let result = expand_action("%%", &f, 0, 1);
+        assert_eq!(result, "%");
+    }
+
+    #[test]
+    fn expand_action_mixed() {
+        let f = test_file();
+        let result = expand_action("cp %f /dest/%n", &f, 0, 1);
+        assert_eq!(result, "cp C:\\images\\photo.jpg /dest/photo.jpg");
+    }
+}

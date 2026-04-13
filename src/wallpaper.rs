@@ -7,7 +7,7 @@ use windows::core::*;
 
 use std::os::windows::ffi::OsStrExt;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum WallpaperMode {
     Center,
     Fill,

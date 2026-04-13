@@ -45,3 +45,6 @@ features = [
     # Registry
     "Win32_System_Registry",
 ]
+
+[dev-dependencies]
+tempfile = "3"

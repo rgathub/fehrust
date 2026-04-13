@@ -62,3 +62,40 @@ fn url_to_filename(url: &str) -> String {
 
     format!("{hash:016x}.{ext}")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn url_to_filename_jpg() {
+        let name = url_to_filename("http://example.com/photo.jpg");
+        assert!(name.ends_with(".jpg"));
+    }
+
+    #[test]
+    fn url_to_filename_png_lowercase() {
+        let name = url_to_filename("http://example.com/photo.PNG");
+        assert!(name.ends_with(".png"));
+    }
+
+    #[test]
+    fn url_to_filename_no_ext() {
+        let name = url_to_filename("http://example.com/data");
+        assert!(name.ends_with(".jpg"));
+    }
+
+    #[test]
+    fn url_to_filename_deterministic() {
+        let a = url_to_filename("http://example.com/photo.jpg");
+        let b = url_to_filename("http://example.com/photo.jpg");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn url_to_filename_different() {
+        let a = url_to_filename("http://example.com/a.jpg");
+        let b = url_to_filename("http://example.com/b.jpg");
+        assert_ne!(a, b);
+    }
+}
