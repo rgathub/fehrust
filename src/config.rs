@@ -64,6 +64,10 @@ pub struct Options {
     #[arg(short = 'x', long)]
     pub borderless: bool,
 
+    /// Display info overlay
+    #[arg(long)]
+    pub draw_info: bool,
+
     /// Hide pointer
     #[arg(short = 'Y', long)]
     pub hide_pointer: bool,

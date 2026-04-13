@@ -109,12 +109,23 @@ pub fn handle_key(state: &mut AppState, hwnd: HWND, vk: VIRTUAL_KEY) {
             window::invalidate(hwnd);
         }
 
+        // Toggle info overlay
+        VK_I => {
+            state.options.draw_info = !state.options.draw_info;
+            window::invalidate(hwnd);
+        }
+
         // Reset zoom to 100%
         VK_0 => {
             state.zoom = 1.0;
             state.pan_x = 0.0;
             state.pan_y = 0.0;
             window::invalidate(hwnd);
+        }
+
+        // Delete from list
+        VK_DELETE => {
+            state.remove_current_from_list(hwnd);
         }
 
         _ => {}

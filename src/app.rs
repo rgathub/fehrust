@@ -2,6 +2,7 @@ use windows::Win32::Foundation::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use crate::config::{Options, ViewMode};
+use crate::exif;
 use crate::filelist::FileList;
 use crate::format::expand_format;
 use crate::image_loader::{ImageLoader, LoadedImage};
@@ -19,6 +20,7 @@ pub struct AppState {
     pub renderer: Renderer,
     pub image_loader: ImageLoader,
     pub current_image: Option<LoadedImage>,
+    pub current_exif: Option<exif::ExifInfo>,
     pub hwnd: HWND,
 
     pub zoom: f64,
@@ -72,6 +74,7 @@ impl AppState {
             renderer,
             image_loader,
             current_image: None,
+            current_exif: None,
             hwnd: HWND::default(),
             zoom: 1.0,
             pan_x: 0.0,
@@ -96,8 +99,11 @@ impl AppState {
         self.rotation = 0.0;
         self.flip_h = false;
         self.flip_v = false;
+        self.current_exif = None;
 
         if let Some(file) = self.filelist.current() {
+            let exif_info = exif::read_exif(&file.path);
+
             match self.image_loader.load(&file.path) {
                 Ok(image) => {
                     if let Err(e) = self.renderer.load_bitmap(
@@ -108,6 +114,17 @@ impl AppState {
                     }
                     self.current_image = Some(image);
                     self.zoom_to_fit();
+
+                    // Apply EXIF auto-rotation
+                    if let Some(ref exif) = exif_info {
+                        if exif.orientation != 1 {
+                            let (rot, fh, fv) =
+                                exif::exif_orientation_to_rotation(exif.orientation);
+                            self.rotation = rot;
+                            self.flip_h = fh;
+                            self.flip_v = fv;
+                        }
+                    }
                 }
                 Err(e) => {
                     eprintln!(
@@ -117,6 +134,8 @@ impl AppState {
                     self.current_image = None;
                 }
             }
+
+            self.current_exif = exif_info;
         }
 
         self.update_title();
@@ -154,13 +173,23 @@ impl AppState {
             .map(|f| f.path.to_string_lossy().into_owned())
             .unwrap_or_default();
 
+        let info_text = if self.options.draw_info {
+            crate::overlay::build_info_string(self)
+        } else {
+            String::new()
+        };
+
         self.renderer.render(
             self.zoom,
             self.pan_x,
             self.pan_y,
             self.rotation,
+            self.flip_h,
+            self.flip_v,
             self.options.draw_filename,
             &filename,
+            self.options.draw_info,
+            &info_text,
         )
     }
 
@@ -181,6 +210,18 @@ impl AppState {
         if !self.paused && self.filelist.len() > 1 {
             self.navigate_next();
         }
+    }
+
+    pub fn remove_current_from_list(&mut self, hwnd: HWND) {
+        if !self.filelist.remove_current() {
+            // List is empty, quit
+            unsafe {
+                let _ = DestroyWindow(hwnd);
+            }
+            return;
+        }
+        self.load_current_image();
+        window::invalidate(hwnd);
     }
 
     pub fn update_title(&self) {

@@ -11,6 +11,7 @@ use std::cell::RefCell;
 
 use crate::app::AppState;
 use crate::input;
+use crate::menu;
 
 /// Window class name
 const CLASS_NAME: &str = "FehRustWindow";
@@ -124,6 +125,12 @@ pub fn invalidate(hwnd: HWND) {
     }
 }
 
+pub fn set_cursor_visible(visible: bool) {
+    unsafe {
+        ShowCursor(visible);
+    }
+}
+
 pub fn toggle_fullscreen(hwnd: HWND, is_fullscreen: &mut bool, saved_rect: &mut RECT) {
     unsafe {
         if *is_fullscreen {
@@ -219,6 +226,28 @@ unsafe extern "system" fn wnd_proc(
             }
             WM_LBUTTONUP => {
                 input::handle_mouse_up(state);
+                LRESULT(0)
+            }
+            WM_RBUTTONUP => {
+                menu::show_context_menu(hwnd);
+                LRESULT(0)
+            }
+            WM_SETCURSOR => {
+                if state.options.hide_pointer {
+                    let hit_test = (lparam.0 & 0xFFFF) as u16;
+                    if hit_test == 1 {
+                        // HTCLIENT
+                        unsafe {
+                            SetCursor(None);
+                        }
+                        return LRESULT(1);
+                    }
+                }
+                unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+            }
+            WM_COMMAND => {
+                let cmd = (wparam.0 & 0xFFFF) as u16;
+                menu::handle_menu_command(state, hwnd, cmd);
                 LRESULT(0)
             }
             WM_TIMER => {

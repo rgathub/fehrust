@@ -1,9 +1,11 @@
 mod app;
 mod config;
+mod exif;
 mod filelist;
 mod format;
 mod image_loader;
 mod input;
+mod menu;
 mod overlay;
 mod renderer;
 mod slideshow;
