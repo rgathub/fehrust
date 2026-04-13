@@ -19,9 +19,7 @@ pub struct ExifInfo {
 pub fn read_exif(path: &Path) -> Option<ExifInfo> {
     let file = File::open(path).ok()?;
     let mut reader = BufReader::new(file);
-    let exif_data = exif::Reader::new()
-        .read_from_container(&mut reader)
-        .ok()?;
+    let exif_data = exif::Reader::new().read_from_container(&mut reader).ok()?;
 
     let orientation = exif_data
         .get_field(exif::Tag::Orientation, exif::In::PRIMARY)
@@ -73,11 +71,7 @@ fn get_string(exif_data: &exif::Exif, tag: exif::Tag) -> Option<String> {
 }
 
 fn read_gps(exif_data: &exif::Exif) -> Option<(f64, f64)> {
-    let lat = parse_gps_coord(
-        exif_data,
-        exif::Tag::GPSLatitude,
-        exif::Tag::GPSLatitudeRef,
-    )?;
+    let lat = parse_gps_coord(exif_data, exif::Tag::GPSLatitude, exif::Tag::GPSLatitudeRef)?;
     let lon = parse_gps_coord(
         exif_data,
         exif::Tag::GPSLongitude,

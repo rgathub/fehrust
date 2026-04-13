@@ -73,10 +73,7 @@ impl AppState {
         };
 
         if filelist.is_empty() {
-            return Err(windows::core::Error::new(
-                E_FAIL,
-                "No image files found",
-            ));
+            return Err(windows::core::Error::new(E_FAIL, "No image files found"));
         }
 
         // Sort
@@ -159,8 +156,8 @@ impl AppState {
             // Load caption if caption_path is set
             if let Some(ref caption_path) = self.options.caption_path {
                 if let Some(stem) = file.path.file_stem() {
-                    let caption_file = Path::new(caption_path)
-                        .join(format!("{}.txt", stem.to_string_lossy()));
+                    let caption_file =
+                        Path::new(caption_path).join(format!("{}.txt", stem.to_string_lossy()));
                     if let Ok(text) = std::fs::read_to_string(&caption_file) {
                         let trimmed = text.trim().to_string();
                         if !trimmed.is_empty() {
@@ -172,10 +169,10 @@ impl AppState {
 
             match self.image_loader.load(&file.path) {
                 Ok(image) => {
-                    if let Err(e) = self.renderer.load_bitmap(
-                        &image,
-                        self.image_loader.wic_factory(),
-                    ) {
+                    if let Err(e) = self
+                        .renderer
+                        .load_bitmap(&image, self.image_loader.wic_factory())
+                    {
                         eprintln!("Failed to create bitmap: {e}");
                     }
                     self.current_image = Some(image);
@@ -193,10 +190,7 @@ impl AppState {
                     }
                 }
                 Err(e) => {
-                    eprintln!(
-                        "Failed to load {}: {e}",
-                        file.path.display()
-                    );
+                    eprintln!("Failed to load {}: {e}", file.path.display());
                     self.current_image = None;
                 }
             }
@@ -283,6 +277,24 @@ impl AppState {
 
     pub fn handle_timer(&mut self) {
         if !self.paused && self.filelist.len() > 1 {
+            let at_last = self.filelist.current_index() == self.filelist.len() - 1;
+            if at_last {
+                match self.options.on_last_slide_action() {
+                    crate::config::OnLastSlide::Quit => {
+                        if self.hwnd != HWND::default() {
+                            unsafe {
+                                let _ = DestroyWindow(self.hwnd);
+                            }
+                        }
+                        return;
+                    }
+                    crate::config::OnLastSlide::Hold => {
+                        self.paused = true;
+                        return;
+                    }
+                    crate::config::OnLastSlide::Resume => {}
+                }
+            }
             self.navigate_next();
         }
     }
@@ -366,13 +378,7 @@ pub fn run(options: Options) -> windows::core::Result<()> {
         state.thumbnail_view = Some(ThumbnailView::new(index_mode));
     }
 
-    let hwnd = window::create_window(
-        "fehrust",
-        init_w,
-        init_h,
-        borderless,
-        fullscreen,
-    )?;
+    let hwnd = window::create_window("fehrust", init_w, init_h, borderless, fullscreen)?;
 
     state.hwnd = hwnd;
 
@@ -460,7 +466,10 @@ fn run_list_mode(options: &Options) -> windows::core::Result<()> {
     let image_loader = ImageLoader::new()?;
     let mut filelist = build_filelist(options);
 
-    let fmt = options.customlist.as_deref().unwrap_or(&options.list_format);
+    let fmt = options
+        .customlist
+        .as_deref()
+        .unwrap_or(&options.list_format);
     let total = filelist.len();
 
     // Populate file sizes

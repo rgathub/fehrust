@@ -6,11 +6,10 @@ use crate::actions;
 use crate::app::AppState;
 use crate::config::ViewMode;
 use crate::keybindings::Action;
+use crate::transforms::{ZOOM_MAX, ZOOM_MIN};
 use crate::window;
 
 const ZOOM_STEP: f64 = 1.15;
-const ZOOM_MIN: f64 = 0.002;
-const ZOOM_MAX: f64 = 2000.0;
 const SCROLL_STEP: f64 = 50.0;
 
 /// Check if Ctrl key is currently pressed
@@ -34,8 +33,7 @@ pub fn handle_key(state: &mut AppState, hwnd: HWND, vk: VIRTUAL_KEY) {
     if vk == VK_OEM_PERIOD && ctrl_pressed() && shift_pressed() {
         if let Some(file) = state.filelist.current() {
             let path = file.path.clone();
-            let transform =
-                crate::jpeg_rotate::RotateDirection::Clockwise90.to_wic_transform();
+            let transform = crate::jpeg_rotate::RotateDirection::Clockwise90.to_wic_transform();
             match state.image_loader.save_rotated(&path, transform) {
                 Ok(()) => {
                     state.load_current_image();
@@ -168,6 +166,16 @@ fn dispatch_action(action: Action, state: &mut AppState, hwnd: HWND) {
             state.load_current_image();
             window::invalidate(hwnd);
         }
+        Action::JumpForward => {
+            state.filelist.jump_forward(5);
+            state.load_current_image();
+            window::invalidate(hwnd);
+        }
+        Action::JumpBack => {
+            state.filelist.jump_back(5);
+            state.load_current_image();
+            window::invalidate(hwnd);
+        }
         Action::ZoomIn => {
             state.zoom = (state.zoom * ZOOM_STEP).min(ZOOM_MAX);
             window::invalidate(hwnd);
@@ -195,11 +203,7 @@ fn dispatch_action(action: Action, state: &mut AppState, hwnd: HWND) {
             window::invalidate(hwnd);
         }
         Action::ToggleFullscreen => {
-            window::toggle_fullscreen(
-                hwnd,
-                &mut state.is_fullscreen,
-                &mut state.saved_rect,
-            );
+            window::toggle_fullscreen(hwnd, &mut state.is_fullscreen, &mut state.saved_rect);
             window::invalidate(hwnd);
         }
         Action::ToggleFilename => {
@@ -236,10 +240,8 @@ fn dispatch_action(action: Action, state: &mut AppState, hwnd: HWND) {
         Action::Wallpaper => {
             if let Some(file) = state.filelist.current() {
                 let path = file.path.clone();
-                match crate::wallpaper::set_wallpaper(
-                    &path,
-                    crate::wallpaper::WallpaperMode::Center,
-                ) {
+                let mode = state.options.wallpaper_mode();
+                match crate::wallpaper::set_wallpaper(&path, mode) {
                     Ok(()) => {}
                     Err(e) => eprintln!("Failed to set wallpaper: {e}"),
                 }
@@ -452,4 +454,3 @@ fn handle_thumbnail_key(state: &mut AppState, hwnd: HWND, vk: VIRTUAL_KEY) {
         _ => {}
     }
 }
-

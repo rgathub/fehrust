@@ -57,14 +57,8 @@ pub fn show_context_menu(hwnd: HWND) {
             if id == 0 {
                 let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
             } else {
-                let text_wide: Vec<u16> =
-                    text.encode_utf16().chain(std::iter::once(0)).collect();
-                let _ = AppendMenuW(
-                    menu,
-                    MF_STRING,
-                    id as usize,
-                    PCWSTR(text_wide.as_ptr()),
-                );
+                let text_wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+                let _ = AppendMenuW(menu, MF_STRING, id as usize, PCWSTR(text_wide.as_ptr()));
             }
         }
 
@@ -134,10 +128,8 @@ pub fn handle_menu_command(state: &mut AppState, hwnd: HWND, cmd: u16) {
         IDM_WALLPAPER => {
             if let Some(file) = state.filelist.current() {
                 let path = file.path.clone();
-                match crate::wallpaper::set_wallpaper(
-                    &path,
-                    crate::wallpaper::WallpaperMode::Center,
-                ) {
+                let mode = state.options.wallpaper_mode();
+                match crate::wallpaper::set_wallpaper(&path, mode) {
                     Ok(()) => {}
                     Err(e) => eprintln!("Failed to set wallpaper: {e}"),
                 }

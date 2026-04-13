@@ -1,8 +1,6 @@
 use windows::{
+    Win32::Foundation::*, Win32::Graphics::Direct2D::Common::*, Win32::Graphics::Direct2D::*,
     core::*,
-    Win32::Foundation::*,
-    Win32::Graphics::Direct2D::Common::*,
-    Win32::Graphics::Direct2D::*,
 };
 
 use crate::image_loader::LoadedImage;
@@ -30,8 +28,7 @@ fn multiply_matrix3x2(
 impl Renderer {
     pub fn new() -> Result<Self> {
         unsafe {
-            let factory: ID2D1Factory =
-                D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)?;
+            let factory: ID2D1Factory = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)?;
 
             Ok(Self {
                 factory,
@@ -205,11 +202,7 @@ impl Renderer {
         Ok(())
     }
 
-    fn draw_checkerboard(
-        &self,
-        rt: &ID2D1HwndRenderTarget,
-        rect: &D2D_RECT_F,
-    ) -> Result<()> {
+    fn draw_checkerboard(&self, rt: &ID2D1HwndRenderTarget, rect: &D2D_RECT_F) -> Result<()> {
         unsafe {
             let light = rt.CreateSolidColorBrush(
                 &D2D1_COLOR_F {
@@ -386,8 +379,7 @@ impl Renderer {
                 rt_size.height,
             )?;
 
-            let mut metrics =
-                windows::Win32::Graphics::DirectWrite::DWRITE_TEXT_METRICS::default();
+            let mut metrics = windows::Win32::Graphics::DirectWrite::DWRITE_TEXT_METRICS::default();
             text_layout.GetMetrics(&mut metrics)?;
 
             let padding = 8.0f32;
@@ -419,17 +411,6 @@ impl Renderer {
 
             Ok(())
         }
-    }
-
-    pub fn has_bitmap(&self) -> bool {
-        self.current_bitmap.is_some()
-    }
-
-    pub fn bitmap_size(&self) -> Option<(f32, f32)> {
-        self.current_bitmap.as_ref().map(|b| {
-            let size = unsafe { b.GetSize() };
-            (size.width, size.height)
-        })
     }
 
     pub fn render_target(&self) -> Option<&ID2D1HwndRenderTarget> {

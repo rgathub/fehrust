@@ -1,9 +1,9 @@
 use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 
-use windows::core::*;
 use windows::Win32::Foundation::{E_FAIL, GENERIC_ACCESS_RIGHTS};
 use windows::Win32::Graphics::Imaging::*;
+use windows::core::*;
 
 use crate::image_loader::ImageLoader;
 
@@ -26,11 +26,7 @@ impl RotateDirection {
 impl ImageLoader {
     /// Save a rotated copy of an image using WIC.
     /// For PNG/BMP this is lossless; for JPEG it re-encodes (acceptable trade-off).
-    pub fn save_rotated(
-        &self,
-        path: &Path,
-        transform: WICBitmapTransformOptions,
-    ) -> Result<()> {
+    pub fn save_rotated(&self, path: &Path, transform: WICBitmapTransformOptions) -> Result<()> {
         unsafe {
             let path_wide: Vec<u16> = path
                 .as_os_str()
@@ -62,8 +58,9 @@ impl ImageLoader {
                 .chain(std::iter::once(0))
                 .collect();
 
-            let encoder: IWICBitmapEncoder =
-                self.wic_factory().CreateEncoder(&container_format, std::ptr::null())?;
+            let encoder: IWICBitmapEncoder = self
+                .wic_factory()
+                .CreateEncoder(&container_format, std::ptr::null())?;
 
             let stream: IWICStream = self.wic_factory().CreateStream()?;
             stream.InitializeFromFilename(PCWSTR(tmp_wide.as_ptr()), 0x40000000u32)?; // GENERIC_WRITE

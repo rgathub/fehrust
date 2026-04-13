@@ -72,6 +72,10 @@ pub struct Options {
     #[arg(short = 'Y', long)]
     pub hide_pointer: bool,
 
+    /// Wallpaper mode: center, fill, fit, stretch, tile, span
+    #[arg(long, default_value = "center")]
+    pub wallpaper_mode: String,
+
     /// Behavior on last slide: resume, quit, hold
     #[arg(long, default_value = "resume")]
     pub on_last_slide: String,
@@ -194,6 +198,18 @@ impl Options {
             "quit" => OnLastSlide::Quit,
             "hold" => OnLastSlide::Hold,
             _ => OnLastSlide::Resume,
+        }
+    }
+
+    pub fn wallpaper_mode(&self) -> crate::wallpaper::WallpaperMode {
+        use crate::wallpaper::WallpaperMode;
+        match self.wallpaper_mode.as_str() {
+            "fill" => WallpaperMode::Fill,
+            "fit" => WallpaperMode::Fit,
+            "stretch" => WallpaperMode::Stretch,
+            "tile" => WallpaperMode::Tile,
+            "span" => WallpaperMode::Span,
+            _ => WallpaperMode::Center,
         }
     }
 

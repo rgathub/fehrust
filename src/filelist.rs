@@ -44,8 +44,8 @@ pub struct FileList {
 }
 
 const IMAGE_EXTENSIONS: &[&str] = &[
-    "jpg", "jpeg", "png", "bmp", "gif", "tiff", "tif", "webp", "ico", "svg",
-    "heif", "heic", "avif", "jxl", "raw", "cr2", "nef", "arw", "dng",
+    "jpg", "jpeg", "png", "bmp", "gif", "tiff", "tif", "webp", "ico", "svg", "heif", "heic",
+    "avif", "jxl", "raw", "cr2", "nef", "arw", "dng",
 ];
 
 fn is_image_file(path: &Path) -> bool {
@@ -56,13 +56,6 @@ fn is_image_file(path: &Path) -> bool {
 }
 
 impl FileList {
-    pub fn new() -> Self {
-        Self {
-            files: Vec::new(),
-            current: 0,
-        }
-    }
-
     /// Create a FileList from a single file
     pub fn from_single(file: FehFile) -> Self {
         Self {
@@ -125,9 +118,9 @@ impl FileList {
 
     pub fn sort_by(&mut self, mode: &str, reverse: bool) {
         match mode {
-            "name" => self.files.sort_by(|a, b| {
-                natord::compare(&a.name.to_lowercase(), &b.name.to_lowercase())
-            }),
+            "name" => self
+                .files
+                .sort_by(|a, b| natord::compare(&a.name.to_lowercase(), &b.name.to_lowercase())),
             "filename" => self.files.sort_by(|a, b| {
                 natord::compare(
                     &a.path.to_string_lossy().to_lowercase(),
@@ -137,9 +130,8 @@ impl FileList {
             "dirname" => self.files.sort_by(|a, b| {
                 let da = a.path.parent().map(|p| p.to_string_lossy().to_lowercase());
                 let db = b.path.parent().map(|p| p.to_string_lossy().to_lowercase());
-                da.cmp(&db).then_with(|| {
-                    natord::compare(&a.name.to_lowercase(), &b.name.to_lowercase())
-                })
+                da.cmp(&db)
+                    .then_with(|| natord::compare(&a.name.to_lowercase(), &b.name.to_lowercase()))
             }),
             "mtime" => {
                 for f in &mut self.files {
@@ -175,14 +167,24 @@ impl FileList {
                 }
             }
             "format" => self.files.sort_by(|a, b| {
-                let ext_a = a.path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
-                let ext_b = b.path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
-                ext_a.cmp(&ext_b).then_with(|| natord::compare(&a.name.to_lowercase(), &b.name.to_lowercase()))
+                let ext_a = a
+                    .path
+                    .extension()
+                    .map(|e| e.to_string_lossy().to_lowercase())
+                    .unwrap_or_default();
+                let ext_b = b
+                    .path
+                    .extension()
+                    .map(|e| e.to_string_lossy().to_lowercase())
+                    .unwrap_or_default();
+                ext_a
+                    .cmp(&ext_b)
+                    .then_with(|| natord::compare(&a.name.to_lowercase(), &b.name.to_lowercase()))
             }),
             "none" => {}
-            _ => self.files.sort_by(|a, b| {
-                natord::compare(&a.name.to_lowercase(), &b.name.to_lowercase())
-            }),
+            _ => self
+                .files
+                .sort_by(|a, b| natord::compare(&a.name.to_lowercase(), &b.name.to_lowercase())),
         }
 
         if reverse {
@@ -331,19 +333,6 @@ impl FileList {
     /// Get a mutable reference to the file list
     pub fn files_mut(&mut self) -> &mut Vec<FehFile> {
         &mut self.files
-    }
-
-    /// Retain only files matching a predicate
-    pub fn retain<F>(&mut self, f: F)
-    where
-        F: FnMut(&FehFile) -> bool,
-    {
-        self.files.retain(f);
-        if self.current >= self.files.len() && !self.files.is_empty() {
-            self.current = self.files.len() - 1;
-        } else if self.files.is_empty() {
-            self.current = 0;
-        }
     }
 
     /// Load file paths from a text file (one per line), keeping only image files

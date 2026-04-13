@@ -1,11 +1,8 @@
 use std::path::Path;
 
 use windows::{
-    core::*,
-    Win32::Foundation::GENERIC_ACCESS_RIGHTS,
-    Win32::Graphics::Imaging::*,
-    Win32::Graphics::Imaging::D2D::IWICImagingFactory2,
-    Win32::System::Com::*,
+    Win32::Foundation::GENERIC_ACCESS_RIGHTS, Win32::Graphics::Imaging::D2D::IWICImagingFactory2,
+    Win32::Graphics::Imaging::*, Win32::System::Com::*, core::*,
 };
 
 use std::os::windows::ffi::OsStrExt;
@@ -119,10 +116,14 @@ impl ImageLoader {
                 .encode_wide()
                 .chain(std::iter::once(0))
                 .collect();
-            stream.InitializeFromFilename(PCWSTR(path_wide.as_ptr()), GENERIC_ACCESS_RIGHTS(0x40000000).0)?; // GENERIC_WRITE
+            stream.InitializeFromFilename(
+                PCWSTR(path_wide.as_ptr()),
+                GENERIC_ACCESS_RIGHTS(0x40000000).0,
+            )?; // GENERIC_WRITE
 
-            let encoder: IWICBitmapEncoder =
-                self.wic_factory.CreateEncoder(container_format, std::ptr::null())?;
+            let encoder: IWICBitmapEncoder = self
+                .wic_factory
+                .CreateEncoder(container_format, std::ptr::null())?;
             encoder.Initialize(&stream, WICBitmapEncoderNoCache)?;
 
             let mut frame: Option<IWICBitmapFrameEncode> = None;

@@ -16,16 +16,16 @@ pub fn execute_action(action_str: &str, file: &FehFile, index: usize, total: usi
     // Run asynchronously so we don't block the UI
     let program = program.to_string();
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-    std::thread::spawn(move || {
-        match std::process::Command::new(&program).args(&args).spawn() {
+    std::thread::spawn(
+        move || match std::process::Command::new(&program).args(&args).spawn() {
             Ok(mut child) => {
                 let _ = child.wait();
             }
             Err(e) => {
                 eprintln!("fehrust: failed to execute action '{}': {}", program, e);
             }
-        }
-    });
+        },
+    );
 }
 
 fn expand_action(action_str: &str, file: &FehFile, index: usize, total: usize) -> String {

@@ -2,11 +2,11 @@ use std::os::windows::ffi::OsStrExt;
 use std::path::PathBuf;
 use std::thread;
 
-use windows::core::PCWSTR;
 use windows::Win32::Foundation::*;
 use windows::Win32::Storage::FileSystem::*;
 use windows::Win32::System::Threading::WaitForSingleObject;
 use windows::Win32::UI::WindowsAndMessaging::*;
+use windows::core::PCWSTR;
 
 /// Custom message posted when directory contents change
 pub const WM_FILE_CHANGED: u32 = WM_USER + 1;

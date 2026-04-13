@@ -25,6 +25,8 @@ pub enum Action {
     ScrollDown,
     JumpFirst,
     JumpLast,
+    JumpForward,
+    JumpBack,
 }
 
 /// Map from virtual key code (u16) to Action
@@ -45,6 +47,8 @@ pub fn default_bindings() -> KeyMap {
     m.insert(VK_LEFT.0, Action::Prev);
     m.insert(VK_HOME.0, Action::JumpFirst);
     m.insert(VK_END.0, Action::JumpLast);
+    m.insert(VK_PRIOR.0, Action::JumpForward); // PgUp
+    m.insert(VK_NEXT.0, Action::JumpBack); // PgDn
 
     // Zoom
     m.insert(VK_OEM_PLUS.0, Action::ZoomIn);
@@ -183,6 +187,8 @@ fn parse_action_name(name: &str) -> Option<Action> {
         "scroll_down" | "scrolldown" | "scroll-down" => Some(Action::ScrollDown),
         "jump_first" | "jumpfirst" | "jump-first" | "first" => Some(Action::JumpFirst),
         "jump_last" | "jumplast" | "jump-last" | "last" => Some(Action::JumpLast),
+        "jump_forward" | "jumpforward" | "jump-forward" => Some(Action::JumpForward),
+        "jump_back" | "jumpback" | "jump-back" => Some(Action::JumpBack),
         _ => None,
     }
 }
@@ -195,7 +201,10 @@ pub fn build_keymap(custom_bindings: &[String]) -> KeyMap {
     for binding in custom_bindings {
         let parts: Vec<&str> = binding.split_whitespace().collect();
         if parts.len() != 2 {
-            eprintln!("fehrust: invalid key binding '{}' (expected 'key action')", binding);
+            eprintln!(
+                "fehrust: invalid key binding '{}' (expected 'key action')",
+                binding
+            );
             continue;
         }
         let key = match parse_key_name(parts[0]) {

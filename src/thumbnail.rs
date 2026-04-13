@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use windows::core::*;
 use windows::Win32::Graphics::Direct2D::Common::*;
 use windows::Win32::Graphics::Direct2D::*;
+use windows::core::*;
 
 use crate::filelist::FileList;
 use crate::image_loader::ImageLoader;
@@ -114,15 +114,30 @@ impl ThumbnailView {
             let cols = self.cols(rt_size.width);
 
             let bg_brush = rt.CreateSolidColorBrush(
-                &D2D1_COLOR_F { r: 0.2, g: 0.2, b: 0.2, a: 1.0 },
+                &D2D1_COLOR_F {
+                    r: 0.2,
+                    g: 0.2,
+                    b: 0.2,
+                    a: 1.0,
+                },
                 None,
             )?;
             let sel_brush = rt.CreateSolidColorBrush(
-                &D2D1_COLOR_F { r: 0.3, g: 0.5, b: 0.9, a: 1.0 },
+                &D2D1_COLOR_F {
+                    r: 0.3,
+                    g: 0.5,
+                    b: 0.9,
+                    a: 1.0,
+                },
                 None,
             )?;
             let text_brush = rt.CreateSolidColorBrush(
-                &D2D1_COLOR_F { r: 0.9, g: 0.9, b: 0.9, a: 1.0 },
+                &D2D1_COLOR_F {
+                    r: 0.9,
+                    g: 0.9,
+                    b: 0.9,
+                    a: 1.0,
+                },
                 None,
             )?;
 
@@ -259,11 +274,6 @@ impl ThumbnailView {
         self.scroll_y += delta;
         let max_scroll = (self.total_height(file_count, viewport_w) - viewport_h).max(0.0);
         self.scroll_y = self.scroll_y.clamp(0.0, max_scroll);
-    }
-
-    /// Clear the bitmap cache (e.g., when render target is recreated)
-    pub fn clear_cache(&mut self) {
-        self.cache.clear();
     }
 }
 

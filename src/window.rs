@@ -1,10 +1,6 @@
 use windows::{
-    core::*,
-    Win32::Foundation::*,
-    Win32::Graphics::Gdi::*,
-    Win32::System::LibraryLoader::GetModuleHandleW,
-    Win32::UI::Input::KeyboardAndMouse::*,
-    Win32::UI::WindowsAndMessaging::*,
+    Win32::Foundation::*, Win32::Graphics::Gdi::*, Win32::System::LibraryLoader::GetModuleHandleW,
+    Win32::UI::Input::KeyboardAndMouse::*, Win32::UI::WindowsAndMessaging::*, core::*,
 };
 
 use std::cell::RefCell;
@@ -75,7 +71,10 @@ pub fn create_window(
     unsafe {
         let hinstance = GetModuleHandleW(None)?;
 
-        let class_name_wide: Vec<u16> = CLASS_NAME.encode_utf16().chain(std::iter::once(0)).collect();
+        let class_name_wide: Vec<u16> = CLASS_NAME
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
 
         let wc = WNDCLASSEXW {
             cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
@@ -162,12 +161,6 @@ pub fn update_title(hwnd: HWND, title: &str) {
 pub fn invalidate(hwnd: HWND) {
     unsafe {
         let _ = InvalidateRect(Some(hwnd), None, false);
-    }
-}
-
-pub fn set_cursor_visible(visible: bool) {
-    unsafe {
-        ShowCursor(visible);
     }
 }
 
@@ -258,7 +251,8 @@ unsafe extern "system" fn wnd_proc(
             WM_MOUSEMOVE => {
                 let x = (lparam.0 & 0xFFFF) as i16 as i32;
                 let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
-                if wparam.0 & 0x0001 != 0 { // MK_LBUTTON
+                if wparam.0 & 0x0001 != 0 {
+                    // MK_LBUTTON
                     input::handle_mouse_drag(state, hwnd, x, y);
                 }
                 LRESULT(0)
