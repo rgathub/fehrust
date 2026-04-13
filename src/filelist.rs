@@ -8,6 +8,8 @@ pub struct FehFile {
     pub name: String,
     pub size: Option<u64>,
     pub mtime: Option<std::time::SystemTime>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
 }
 
 impl FehFile {
@@ -21,6 +23,8 @@ impl FehFile {
             name,
             size: None,
             mtime: None,
+            width: None,
+            height: None,
         }
     }
 
@@ -149,6 +153,32 @@ impl FileList {
                 }
                 self.files.sort_by(|a, b| a.size.cmp(&b.size));
             }
+            "width" | "height" | "pixels" => {
+                let loader = crate::image_loader::ImageLoader::new();
+                if let Ok(loader) = loader {
+                    for f in &mut self.files {
+                        if f.width.is_none() {
+                            if let Ok((w, h)) = loader.get_dimensions(&f.path) {
+                                f.width = Some(w);
+                                f.height = Some(h);
+                            }
+                        }
+                    }
+                }
+                match mode {
+                    "width" => self.files.sort_by_key(|f| f.width.unwrap_or(0)),
+                    "height" => self.files.sort_by_key(|f| f.height.unwrap_or(0)),
+                    "pixels" => self.files.sort_by_key(|f| {
+                        (f.width.unwrap_or(0) as u64) * (f.height.unwrap_or(0) as u64)
+                    }),
+                    _ => unreachable!(),
+                }
+            }
+            "format" => self.files.sort_by(|a, b| {
+                let ext_a = a.path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+                let ext_b = b.path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+                ext_a.cmp(&ext_b).then_with(|| natord::compare(&a.name.to_lowercase(), &b.name.to_lowercase()))
+            }),
             "none" => {}
             _ => self.files.sort_by(|a, b| {
                 natord::compare(&a.name.to_lowercase(), &b.name.to_lowercase())
