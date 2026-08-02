@@ -95,7 +95,7 @@ pub fn create_window(
 
         let atom = RegisterClassExW(&wc);
         if atom == 0 {
-            return Err(Error::from_win32());
+            return Err(Error::from_thread());
         }
 
         let style = if borderless || fullscreen {

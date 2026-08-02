@@ -32,16 +32,22 @@ pub fn fetch_image(url: &str) -> Result<PathBuf, String> {
     // Evict old cache entries before downloading
     evict_cache(&cache_dir);
 
-    let agent = ureq::AgentBuilder::new()
-        .timeout(std::time::Duration::from_secs(120))
-        .build();
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(std::time::Duration::from_secs(120)))
+        .build()
+        .into();
     let response = agent
         .get(url)
         .call()
         .map_err(|e| format!("HTTP request failed: {e}"))?;
 
     // Validate Content-Type
-    let content_type = response.content_type().to_lowercase();
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
+        .to_lowercase();
     if !IMAGE_CONTENT_TYPES
         .iter()
         .any(|ct| content_type.starts_with(ct))
@@ -53,6 +59,8 @@ pub fn fetch_image(url: &str) -> Result<PathBuf, String> {
 
     let mut body = Vec::new();
     response
+        .into_parts()
+        .1
         .into_reader()
         .take(MAX_DOWNLOAD_BYTES)
         .read_to_end(&mut body)

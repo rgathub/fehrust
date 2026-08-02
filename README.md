@@ -2,6 +2,10 @@
 
 A fast, keyboard-driven image viewer for **Windows**, inspired by [feh](https://feh.finalrewind.org/). Built in Rust using native Windows APIs (Win32, Direct2D, WIC, DirectWrite) — no cross-platform GUI toolkit, no Electron, no bloat.
 
+## Current Status
+
+fehrust is a functional Windows-native image viewer with single-image, slideshow, thumbnail, contact-sheet, multi-window, list, filtering, wallpaper, HTTP/HTTPS, EXIF, captions, file watching, and custom action support. The project currently produces Windows x86_64 binaries; Linux and macOS are not supported.
+
 ## Features
 
 - **Hardware-accelerated rendering** via Direct2D
@@ -28,6 +32,11 @@ cargo build --release
 ```
 
 The binary will be at `target\release\fehrust.exe`.
+
+## Requirements
+
+- Windows with the Windows Imaging Component (WIC) codecs needed for the image formats you want to open
+- Rust stable toolchain (edition 2024)
 
 ## Usage
 
@@ -275,6 +284,30 @@ src/
 | Directory walk | `walkdir` |
 | Natural sorting | `natord` |
 
+## Development and Testing
+
+Run these commands from the repository root on Windows:
+
+```powershell
+# Check formatting
+cargo fmt -- --check
+
+# Run lint checks
+cargo clippy -- -D warnings
+
+# Run the complete test suite
+cargo test
+
+# Build the optimized executable
+cargo build --release
+```
+
+The CLI tests cover help, version, list, custom-list, and loadable modes. The image-loader integration tests validate Windows fixture handling and are run with:
+
+```powershell
+cargo test --test image_loader_test
+```
+
 ## Compared to feh
 
 fehrust is a Windows-native reimplementation of feh's core functionality. Key differences:
@@ -300,3 +333,28 @@ fehrust is a Windows-native reimplementation of feh's core functionality. Key di
 ## License
 
 MIT
+
+## Release Process
+
+Releases are Windows x86_64 GitHub Releases created by `.github/workflows/release.yml`.
+
+1. Choose the next semantic version, such as `0.1.2`.
+2. Update the `version` field in `Cargo.toml`.
+3. Run `cargo check` so `Cargo.lock` records the new package version.
+4. Run the formatting, lint, build, and test commands from [Development and Testing](#development-and-testing).
+5. Commit and push the version change to `main`:
+
+   ```powershell
+   git add Cargo.toml Cargo.lock
+   git commit -m "Release v0.1.2"
+   git push origin main
+   ```
+
+6. Create and push an annotated `v*` tag:
+
+   ```powershell
+   git tag -a v0.1.2 -m "Release v0.1.2"
+   git push origin v0.1.2
+   ```
+
+Pushing the tag starts the Windows release workflow. It builds and tests the project, packages `fehrust.exe`, `README.md`, and any license files into `fehrust-v0.1.2-windows-x86_64.zip`, and creates a GitHub Release with generated release notes.
