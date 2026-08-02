@@ -9,6 +9,7 @@ use std::os::windows::ffi::OsStrExt;
 
 pub struct ImageLoader {
     wic_factory: IWICImagingFactory2,
+    _com_guard: ComGuard,
 }
 
 pub struct LoadedImage {
@@ -17,15 +18,29 @@ pub struct LoadedImage {
     pub wic_bitmap: IWICFormatConverter,
 }
 
+struct ComGuard;
+
+impl Drop for ComGuard {
+    fn drop(&mut self) {
+        unsafe {
+            CoUninitialize();
+        }
+    }
+}
+
 impl ImageLoader {
     pub fn new() -> Result<Self> {
         unsafe {
             CoInitializeEx(None, COINIT_MULTITHREADED).ok()?;
+            let com_guard = ComGuard;
 
             let wic_factory: IWICImagingFactory2 =
                 CoCreateInstance(&CLSID_WICImagingFactory2, None, CLSCTX_INPROC_SERVER)?;
 
-            Ok(Self { wic_factory })
+            Ok(Self {
+                wic_factory,
+                _com_guard: com_guard,
+            })
         }
     }
 
@@ -150,13 +165,5 @@ impl ImageLoader {
 
     pub fn wic_factory(&self) -> &IWICImagingFactory2 {
         &self.wic_factory
-    }
-}
-
-impl Drop for ImageLoader {
-    fn drop(&mut self) {
-        unsafe {
-            CoUninitialize();
-        }
     }
 }

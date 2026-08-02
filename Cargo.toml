@@ -6,15 +6,15 @@ description = "A Windows-native image viewer inspired by feh"
 license = "MIT"
 
 [dependencies]
-clap = { version = "4", features = ["derive"] }
-kamadak-exif = "0.6"
-walkdir = "2"
-natord = "1.0"
-windows-numerics = "0.2"
-ureq = { version = "2", features = ["tls"] }
+clap = { version = "4.6.5", features = ["derive"] }
+kamadak-exif = "0.6.1"
+walkdir = "2.5.0"
+natord = "1.0.9"
+windows-numerics = "0.3.1"
+ureq = "3.3.0"
 
 [dependencies.windows]
-version = "0.61"
+version = "0.62.2"
 features = [
     # Core
     "Win32_Foundation",
@@ -47,4 +47,6 @@ features = [
 ]
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = "3.27.0"
+assert_cmd = "2.2.2"
+predicates = "3.1.4"
