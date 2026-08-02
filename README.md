@@ -302,7 +302,7 @@ cargo test
 cargo build --release
 ```
 
-The CLI tests cover help, version, list, custom-list, and loadable modes. The image-loader integration tests validate Windows fixture handling and are run with:
+The CLI tests cover help, version, list, `--customlist`, and loadable modes. The image-loader integration tests validate Windows fixture handling and are run with:
 
 ```powershell
 cargo test --test image_loader_test
