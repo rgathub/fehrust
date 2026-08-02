@@ -137,13 +137,13 @@ impl FileList {
                 for f in &mut self.files {
                     f.load_stat();
                 }
-                self.files.sort_by(|a, b| a.mtime.cmp(&b.mtime));
+                self.files.sort_by_key(|a| a.mtime);
             }
             "size" => {
                 for f in &mut self.files {
                     f.load_stat();
                 }
-                self.files.sort_by(|a, b| a.size.cmp(&b.size));
+                self.files.sort_by_key(|a| a.size);
             }
             "width" | "height" | "pixels" => {
                 let loader = crate::image_loader::ImageLoader::new();
