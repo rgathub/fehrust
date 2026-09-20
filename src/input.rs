@@ -243,6 +243,9 @@ fn dispatch_action(action: Action, state: &mut AppState, hwnd: HWND) {
         Action::DeleteFromDisk => {
             state.delete_current_from_disk(hwnd);
         }
+        Action::Move => {
+            state.move_current_to_directory(hwnd);
+        }
         Action::Wallpaper => {
             if let Some(file) = state.filelist.current() {
                 let path = file.path.clone();

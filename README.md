@@ -156,6 +156,7 @@ fehrust -F -D 10 'C:\Photos'
 | `w` | Set current image as desktop wallpaper |
 | `Del` | Remove image from list (not from disk) |
 | `e` | Delete current image from disk |
+| `m` | Move current image to the `--move` directory |
 | `Enter` | Execute default action (`--action`) |
 | `1`–`9` | Execute custom action (`--action1` through `--action9`) |
 | `q` | Quit |
@@ -201,6 +202,7 @@ All keybindings are configurable with `--key-binding "key action"`.
 | `--start-at FILE` | Start at a specific file |
 | `--min-dimension WxH` | Only show images at least this large |
 | `--max-dimension WxH` | Only show images at most this large |
+| `--move DIRECTORY` | Set the destination directory used by the `m` shortcut; creates it if needed |
 
 ### Modes
 

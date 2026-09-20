@@ -22,6 +22,7 @@ pub const IDM_QUIT: u16 = 1014;
 pub const IDM_WALLPAPER: u16 = 1015;
 pub const IDM_SAVE: u16 = 1016;
 pub const IDM_DELETE_DISK: u16 = 1017;
+pub const IDM_MOVE: u16 = 1018;
 
 pub fn show_context_menu(hwnd: HWND) {
     unsafe {
@@ -52,6 +53,7 @@ pub fn show_context_menu(hwnd: HWND) {
             (0, ""),
             (IDM_DELETE_LIST, "Delete from List\tDel"),
             (IDM_DELETE_DISK, "Delete from Disk\tE"),
+            (IDM_MOVE, "Move to Directory\tm"),
             (IDM_QUIT, "Quit\tQ"),
         ];
 
@@ -129,6 +131,9 @@ pub fn handle_menu_command(state: &mut AppState, hwnd: HWND, cmd: u16) {
         }
         IDM_DELETE_DISK => {
             state.delete_current_from_disk(hwnd);
+        }
+        IDM_MOVE => {
+            state.move_current_to_directory(hwnd);
         }
         IDM_WALLPAPER => {
             if let Some(file) = state.filelist.current() {
