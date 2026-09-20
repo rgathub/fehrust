@@ -90,6 +90,9 @@ fehrust https://example.com/image.jpg
 
 # Watch for file changes and auto-reload
 fehrust --auto-reload C:\Screenshots
+
+# Start a fullscreen slideshow
+fehrust -F -D 10 'C:\Photos'
 ```
 
 ## Keyboard Shortcuts
@@ -152,6 +155,7 @@ fehrust --auto-reload C:\Screenshots
 | `s` | Save a copy of the current image |
 | `w` | Set current image as desktop wallpaper |
 | `Del` | Remove image from list (not from disk) |
+| `e` | Delete current image from disk |
 | `Enter` | Execute default action (`--action`) |
 | `1`–`9` | Execute custom action (`--action1` through `--action9`) |
 | `q` | Quit |

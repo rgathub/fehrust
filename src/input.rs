@@ -119,6 +119,11 @@ pub fn handle_key(state: &mut AppState, hwnd: HWND, vk: VIRTUAL_KEY) {
         return;
     }
 
+    if vk == VK_DELETE && shift_pressed() {
+        state.delete_current_from_disk(hwnd);
+        return;
+    }
+
     // Default action on Enter
     if vk == VK_RETURN {
         if let Some(ref action_str) = state.options.action.clone()
@@ -234,6 +239,9 @@ fn dispatch_action(action: Action, state: &mut AppState, hwnd: HWND) {
         }
         Action::Delete => {
             state.remove_current_from_list(hwnd);
+        }
+        Action::DeleteFromDisk => {
+            state.delete_current_from_disk(hwnd);
         }
         Action::Wallpaper => {
             if let Some(file) = state.filelist.current() {

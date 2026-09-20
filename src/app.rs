@@ -311,6 +311,34 @@ impl AppState {
         window::invalidate(hwnd);
     }
 
+    pub fn delete_current_from_disk(&mut self, hwnd: HWND) {
+        let Some(path) = self.filelist.current().map(|file| file.path.clone()) else {
+            return;
+        };
+
+        self.current_image = None;
+        self.renderer.clear_bitmap();
+
+        match std::fs::remove_file(&path) {
+            Ok(()) => {
+                eprintln!("Deleted: {}", path.display());
+                if !self.filelist.remove_current() {
+                    unsafe {
+                        let _ = DestroyWindow(hwnd);
+                    }
+                    return;
+                }
+                self.load_current_image();
+                window::invalidate(hwnd);
+            }
+            Err(e) => {
+                eprintln!("Failed to delete {}: {e}", path.display());
+                self.load_current_image();
+                window::invalidate(hwnd);
+            }
+        }
+    }
+
     pub fn update_title(&self) {
         if self.hwnd == HWND::default() {
             return;
