@@ -18,6 +18,12 @@ const SLIDESHOW_TIMER_ID: usize = 1;
 const DEFAULT_WIDTH: u32 = 800;
 const DEFAULT_HEIGHT: u32 = 600;
 
+fn slideshow_timer_ms(delay: Option<f64>) -> Option<u32> {
+    let delay = delay?;
+    let ms = (delay * 1000.0) as u32;
+    (ms > 0).then_some(ms)
+}
+
 pub struct AppState {
     pub options: Options,
     pub filelist: FileList,
@@ -299,6 +305,14 @@ impl AppState {
         }
     }
 
+    fn reset_slideshow_timer(&self, hwnd: HWND) {
+        if let Some(ms) = slideshow_timer_ms(self.options.slideshow_delay) {
+            unsafe {
+                SetTimer(Some(hwnd), SLIDESHOW_TIMER_ID, ms, None);
+            }
+        }
+    }
+
     pub fn remove_current_from_list(&mut self, hwnd: HWND) {
         if !self.filelist.remove_current() {
             // List is empty, quit
@@ -308,6 +322,7 @@ impl AppState {
             return;
         }
         self.load_current_image();
+        self.reset_slideshow_timer(hwnd);
         window::invalidate(hwnd);
     }
 
@@ -329,6 +344,7 @@ impl AppState {
                     return;
                 }
                 self.load_current_image();
+                self.reset_slideshow_timer(hwnd);
                 window::invalidate(hwnd);
             }
             Err(e) => {
@@ -379,6 +395,7 @@ impl AppState {
                     return;
                 }
                 self.load_current_image();
+                self.reset_slideshow_timer(hwnd);
                 window::invalidate(hwnd);
             }
             Err(e) => {
@@ -489,12 +506,9 @@ pub fn run(options: Options) -> windows::core::Result<()> {
     }
 
     // Set up slideshow timer
-    if let Some(delay) = slideshow_delay {
-        let ms = (delay * 1000.0) as u32;
-        if ms > 0 {
-            unsafe {
-                SetTimer(Some(hwnd), SLIDESHOW_TIMER_ID, ms, None);
-            }
+    if let Some(ms) = slideshow_timer_ms(slideshow_delay) {
+        unsafe {
+            SetTimer(Some(hwnd), SLIDESHOW_TIMER_ID, ms, None);
         }
     }
 
@@ -523,6 +537,27 @@ pub fn run(options: Options) -> windows::core::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::slideshow_timer_ms;
+
+    #[test]
+    fn slideshow_timer_ms_requires_a_delay() {
+        assert_eq!(slideshow_timer_ms(None), None);
+    }
+
+    #[test]
+    fn slideshow_timer_ms_converts_seconds_to_milliseconds() {
+        assert_eq!(slideshow_timer_ms(Some(2.5)), Some(2500));
+    }
+
+    #[test]
+    fn slideshow_timer_ms_ignores_non_positive_delays() {
+        assert_eq!(slideshow_timer_ms(Some(0.0)), None);
+        assert_eq!(slideshow_timer_ms(Some(-1.0)), None);
+    }
 }
 
 /// Build a FileList from options (--filelist or CLI args)
