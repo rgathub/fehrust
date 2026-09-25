@@ -46,6 +46,7 @@ jobs:
           New-Item -ItemType Directory -Path $dir
           Copy-Item target/release/fehrust.exe $dir/
           Copy-Item README.md $dir/
+          Copy-Item CHANGELOG.md $dir/
           Copy-Item LICENSE* $dir/ -ErrorAction SilentlyContinue
           Compress-Archive -Path $dir -DestinationPath "${dir}.zip"
           Push-Location installer
