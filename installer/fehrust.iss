@@ -25,14 +25,12 @@ OutputBaseFilename=fehrust-{#MyAppVersion}-windows-x86_64-setup
 Compression=lzma
 SolidCompression=yes
 PrivilegesRequired=lowest
+ChangesEnvironment=yes
 UninstallDisplayIcon={app}\{#MyAppExeName}
 WizardStyle=modern
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
-
-[Tasks]
-Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"
 
 [Files]
 Source: "..\target\release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
@@ -41,7 +39,6 @@ Source: "..\CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Registry]
 Root: HKCU; Subkey: "Software\Classes\Applications\{#MyAppExeName}\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Flags: uninsdeletekey
@@ -65,3 +62,91 @@ Root: HKCU; Subkey: "Software\Classes\.cr2\OpenWithList\{#MyAppExeName}"; ValueT
 Root: HKCU; Subkey: "Software\Classes\.nef\OpenWithList\{#MyAppExeName}"; ValueType: string; ValueName: ""; ValueData: ""; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\.arw\OpenWithList\{#MyAppExeName}"; ValueType: string; ValueName: ""; ValueData: ""; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\.dng\OpenWithList\{#MyAppExeName}"; ValueType: string; ValueName: ""; ValueData: ""; Flags: uninsdeletekey
+
+[Code]
+const
+  UserEnvironmentKey = 'Environment';
+  UserPathValue = 'Path';
+
+function PathEntryMatches(Entry: string; Target: string): Boolean;
+begin
+  Result := CompareText(Trim(Entry), Target) = 0;
+end;
+
+function UserPathContains(Target: string): Boolean;
+var
+  ExistingPath: string;
+  Entries: TArrayOfString;
+  Index: Integer;
+begin
+  Result := False;
+  if not RegQueryStringValue(HKEY_CURRENT_USER, UserEnvironmentKey, UserPathValue, ExistingPath) then
+    Exit;
+
+  Entries := StringSplit(ExistingPath, [';'], stExcludeEmpty);
+  for Index := 0 to GetArrayLength(Entries) - 1 do
+    if PathEntryMatches(Entries[Index], Target) then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
+procedure AddInstallDirectoryToUserPath;
+var
+  ExistingPath: string;
+  InstallDirectory: string;
+  NewPath: string;
+begin
+  InstallDirectory := RemoveBackslashUnlessRoot(ExpandConstant('{app}'));
+  if UserPathContains(InstallDirectory) then
+    Exit;
+
+  if RegQueryStringValue(HKEY_CURRENT_USER, UserEnvironmentKey, UserPathValue, ExistingPath) and
+     (ExistingPath <> '') then
+    NewPath := ExistingPath + ';' + InstallDirectory
+  else
+    NewPath := InstallDirectory;
+
+  RegWriteStringValue(HKEY_CURRENT_USER, UserEnvironmentKey, UserPathValue, NewPath);
+end;
+
+procedure RemoveInstallDirectoryFromUserPath;
+var
+  ExistingPath: string;
+  Entries: TArrayOfString;
+  Index: Integer;
+  NewPath: string;
+  InstallDirectory: string;
+begin
+  InstallDirectory := RemoveBackslashUnlessRoot(ExpandConstant('{app}'));
+  if not RegQueryStringValue(HKEY_CURRENT_USER, UserEnvironmentKey, UserPathValue, ExistingPath) then
+    Exit;
+
+  Entries := StringSplit(ExistingPath, [';'], stExcludeEmpty);
+  NewPath := '';
+  for Index := 0 to GetArrayLength(Entries) - 1 do
+    if not PathEntryMatches(Entries[Index], InstallDirectory) then
+    begin
+      if NewPath <> '' then
+        NewPath := NewPath + ';';
+      NewPath := NewPath + Entries[Index];
+    end;
+
+  if NewPath = '' then
+    RegDeleteValue(HKEY_CURRENT_USER, UserEnvironmentKey, UserPathValue)
+  else
+    RegWriteStringValue(HKEY_CURRENT_USER, UserEnvironmentKey, UserPathValue, NewPath);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+    AddInstallDirectoryToUserPath;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usPostUninstall then
+    RemoveInstallDirectoryFromUserPath;
+end;

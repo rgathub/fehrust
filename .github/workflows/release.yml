@@ -109,6 +109,10 @@ jobs:
               throw "File association was not registered for $extension."
             }
           }
+          $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+          if (-not (($userPath -split ";" | ForEach-Object { $_.TrimEnd("\") }) -contains $installDir.TrimEnd("\"))) {
+            throw "The installation directory was not added to the user PATH."
+          }
 
           $uninstall = Start-Process -FilePath $uninstaller -ArgumentList @(
             "/VERYSILENT",
@@ -138,6 +142,10 @@ jobs:
             if (Test-Path $openWith) {
               throw "File association registry key still exists for $extension."
             }
+          }
+          $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+          if (($userPath -split ";" | ForEach-Object { $_.TrimEnd("\") }) -contains $installDir.TrimEnd("\")) {
+            throw "The installation directory remains in the user PATH."
           }
 
       - name: Publish release archive and setup installer

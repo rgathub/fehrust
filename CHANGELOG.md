@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Installer no longer offers a desktop shortcut and adds its per-user install directory to `PATH`.
+
 ## [0.2.0] - 2026-09-24
 
 ### Added
