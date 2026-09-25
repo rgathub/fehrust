@@ -102,7 +102,7 @@ jobs:
             throw "File-open command was not registered correctly: $openCommand"
           }
 
-          foreach ($extension in @(".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff")) {
+          foreach ($extension in @(".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff", ".webp", ".heic", ".heif", ".avif", ".ico", ".svg", ".jxl", ".raw", ".cr2", ".nef", ".arw", ".dng")) {
             $openWith = "HKCU:\Software\Classes\$extension\OpenWithList\fehrust.exe"
             if (-not (Test-Path $openWith)) {
               throw "File association was not registered for $extension."
@@ -132,13 +132,10 @@ jobs:
               }
             }
           }
-          foreach ($extension in @(".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff")) {
+          foreach ($extension in @(".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff", ".webp", ".heic", ".heif", ".avif", ".ico", ".svg", ".jxl", ".raw", ".cr2", ".nef", ".arw", ".dng")) {
             $openWith = "HKCU:\Software\Classes\$extension\OpenWithList\fehrust.exe"
-            if (Test-Path (Split-Path $openWith)) {
-              $properties = Get-ItemProperty (Split-Path $openWith)
-              if ($properties.PSObject.Properties.Name -contains "fehrust.exe") {
-                throw "File association registry value still exists for $extension."
-              }
+            if (Test-Path $openWith) {
+              throw "File association registry key still exists for $extension."
             }
           }
 

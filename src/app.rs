@@ -12,6 +12,7 @@ use crate::thumbnail::ThumbnailView;
 use crate::transforms;
 use crate::window;
 
+use std::io;
 use std::path::Path;
 
 const SLIDESHOW_TIMER_ID: usize = 1;
@@ -22,6 +23,25 @@ fn slideshow_timer_ms(delay: Option<f64>) -> Option<u32> {
     let delay = delay?;
     let ms = (delay * 1000.0) as u32;
     (ms > 0).then_some(ms)
+}
+
+fn move_file(path: &Path, target: &Path) -> io::Result<()> {
+    match std::fs::rename(path, target) {
+        Ok(()) => Ok(()),
+        Err(error) if error.raw_os_error() == Some(17) => {
+            if target.exists() {
+                return Err(error);
+            }
+
+            std::fs::copy(path, target)?;
+            if let Err(remove_error) = std::fs::remove_file(path) {
+                let _ = std::fs::remove_file(target);
+                return Err(remove_error);
+            }
+            Ok(())
+        }
+        Err(error) => Err(error),
+    }
 }
 
 pub struct AppState {
@@ -385,7 +405,7 @@ impl AppState {
         self.current_image = None;
         self.renderer.clear_bitmap();
 
-        match std::fs::rename(&path, &target) {
+        match move_file(&path, &target) {
             Ok(()) => {
                 eprintln!("Moved {} to {}", path.display(), target.display());
                 if !self.filelist.remove_current() {
