@@ -35,7 +35,8 @@ jobs:
         run: cargo test
 
       - name: Install Inno Setup
-        uses: ilammy/setup-innosetup@v2
+        shell: pwsh
+        run: choco install innosetup --no-progress --yes
 
       - name: Package release
         shell: pwsh
@@ -48,7 +49,8 @@ jobs:
           Copy-Item LICENSE* $dir/ -ErrorAction SilentlyContinue
           Compress-Archive -Path $dir -DestinationPath "${dir}.zip"
           Push-Location installer
-          iscc.exe "/DMyAppVersion=$($version.TrimStart('v'))" fehrust.iss
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            "/DMyAppVersion=$($version.TrimStart('v'))" fehrust.iss
           Pop-Location
 
       - name: Validate installer

@@ -68,13 +68,16 @@ jobs:
         with:
           name: fehrust-release-binary
           path: target/release
-      - uses: ilammy/setup-innosetup@v2
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress --yes
       - name: Build installer
         shell: pwsh
         run: |
           $version = (Select-String '^\s*version\s*=' Cargo.toml |
             Select-Object -First 1).Line -replace '.*"([^"]+)".*','$1'
-          iscc.exe "/DMyAppVersion=$version" installer\fehrust.iss
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            "/DMyAppVersion=$version" installer\fehrust.iss
       - name: Upload setup executable
         uses: actions/upload-artifact@v4
         with:
