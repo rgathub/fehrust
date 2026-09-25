@@ -34,6 +34,10 @@ jobs:
       - name: Run tests
         run: cargo test
 
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress --yes
+
       - name: Package release
         shell: pwsh
         run: |
@@ -44,9 +48,101 @@ jobs:
           Copy-Item README.md $dir/
           Copy-Item LICENSE* $dir/ -ErrorAction SilentlyContinue
           Compress-Archive -Path $dir -DestinationPath "${dir}.zip"
+          Push-Location installer
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            "/DMyAppVersion=$($version.TrimStart('v'))" fehrust.iss
+          Pop-Location
 
-      - name: Create GitHub Release
+      - name: Validate installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $installer = Get-ChildItem "installer\fehrust-*-windows-x86_64-setup.exe" |
+            Select-Object -First 1
+          if ($null -eq $installer) {
+            throw "Installer executable was not produced."
+          }
+
+          $installDir = Join-Path $env:RUNNER_TEMP "fehrust-installer-test"
+          $installLog = Join-Path $env:RUNNER_TEMP "fehrust-installer-test.log"
+          if (Test-Path $installDir) {
+            Remove-Item $installDir -Recurse -Force
+          }
+
+          $install = Start-Process -FilePath $installer.FullName -Wait -PassThru `
+            -ArgumentList @(
+              "/VERYSILENT",
+              "/SUPPRESSMSGBOXES",
+              "/NORESTART",
+              "/DIR=$installDir",
+              "/LOG=$installLog"
+            )
+          if ($install.ExitCode -ne 0) {
+            throw "Installer exited with code $($install.ExitCode). See $installLog."
+          }
+
+          $exe = Join-Path $installDir "fehrust.exe"
+          $readme = Join-Path $installDir "README.md"
+          $uninstaller = Join-Path $installDir "unins000.exe"
+          foreach ($path in @($exe, $readme, $uninstaller)) {
+            if (-not (Test-Path $path -PathType Leaf)) {
+              throw "Expected installed file was not found: $path"
+            }
+          }
+
+          $help = Start-Process -FilePath $exe -ArgumentList "--help" `
+            -Wait -PassThru -NoNewWindow
+          if ($help.ExitCode -ne 0) {
+            throw "Installed executable --help exited with code $($help.ExitCode)."
+          }
+
+          $openCommand = (Get-ItemProperty `
+            "HKCU:\Software\Classes\Applications\fehrust.exe\shell\open\command").'(default)'
+          if ($openCommand -notlike "*$exe*%1*") {
+            throw "File-open command was not registered correctly: $openCommand"
+          }
+
+          foreach ($extension in @(".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff", ".webp", ".heic", ".heif", ".avif", ".ico", ".svg", ".jxl", ".raw", ".cr2", ".nef", ".arw", ".dng")) {
+            $openWith = "HKCU:\Software\Classes\$extension\OpenWithList\fehrust.exe"
+            if (-not (Test-Path $openWith)) {
+              throw "File association was not registered for $extension."
+            }
+          }
+
+          $uninstall = Start-Process -FilePath $uninstaller -ArgumentList @(
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART"
+          ) -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0) {
+            throw "Uninstaller exited with code $($uninstall.ExitCode)."
+          }
+
+          if (Test-Path $installDir) {
+            throw "Installation directory still exists after uninstall: $installDir"
+          }
+          foreach ($path in @(
+            "HKCU:\Software\Classes\Applications\fehrust.exe\shell\open\command",
+            "HKCU:\Software\Classes\Applications\fehrust.exe\DefaultIcon"
+          )) {
+            if (Test-Path $path) {
+              $properties = Get-ItemProperty $path
+              if ($properties.PSObject.Properties.Name -contains "(default)") {
+                throw "Application registry value still exists after uninstall: $path"
+              }
+            }
+          }
+          foreach ($extension in @(".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff", ".webp", ".heic", ".heif", ".avif", ".ico", ".svg", ".jxl", ".raw", ".cr2", ".nef", ".arw", ".dng")) {
+            $openWith = "HKCU:\Software\Classes\$extension\OpenWithList\fehrust.exe"
+            if (Test-Path $openWith) {
+              throw "File association registry key still exists for $extension."
+            }
+          }
+
+      - name: Publish release archive and setup installer
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: fehrust-*.zip
+          files: |
+            fehrust-*.zip
+            installer\fehrust-*-setup.exe

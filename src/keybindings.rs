@@ -19,6 +19,8 @@ pub enum Action {
     Pause,
     Quit,
     Delete,
+    DeleteFromDisk,
+    Move,
     Wallpaper,
     Save,
     ScrollUp,
@@ -81,8 +83,10 @@ pub fn default_bindings() -> KeyMap {
 
     // Delete
     m.insert(VK_DELETE.0, Action::Delete);
+    m.insert(VK_E.0, Action::DeleteFromDisk);
 
     // Wallpaper / Save
+    m.insert(VK_M.0, Action::Move);
     m.insert(VK_W.0, Action::Wallpaper);
     m.insert(VK_S.0, Action::Save);
 
@@ -181,6 +185,8 @@ fn parse_action_name(name: &str) -> Option<Action> {
         "pause" => Some(Action::Pause),
         "quit" | "exit" => Some(Action::Quit),
         "delete" => Some(Action::Delete),
+        "delete_disk" | "deletedisk" | "delete-from-disk" => Some(Action::DeleteFromDisk),
+        "move" => Some(Action::Move),
         "wallpaper" => Some(Action::Wallpaper),
         "save" => Some(Action::Save),
         "scroll_up" | "scrollup" | "scroll-up" => Some(Action::ScrollUp),
@@ -259,6 +265,18 @@ mod tests {
     fn default_has_fullscreen() {
         let map = default_bindings();
         assert_eq!(map[&VK_F11.0], Action::ToggleFullscreen);
+    }
+
+    #[test]
+    fn default_has_delete_from_disk() {
+        let map = default_bindings();
+        assert_eq!(map[&VK_E.0], Action::DeleteFromDisk);
+    }
+
+    #[test]
+    fn default_has_move() {
+        let map = default_bindings();
+        assert_eq!(map[&VK_M.0], Action::Move);
     }
 
     #[test]

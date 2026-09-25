@@ -33,6 +33,10 @@ cargo build --release
 
 The binary will be at `target\release\fehrust.exe`.
 
+For end-user installation, download the `fehrust-*-windows-x86_64-setup.exe` installer from
+the [GitHub Releases](https://github.com/rgathub/fehrust/releases) page. It installs fehrust
+per-user and can register supported image formats in the Windows Open With menu.
+
 ## Requirements
 
 - Windows with the Windows Imaging Component (WIC) codecs needed for the image formats you want to open
@@ -86,6 +90,9 @@ fehrust https://example.com/image.jpg
 
 # Watch for file changes and auto-reload
 fehrust --auto-reload C:\Screenshots
+
+# Start a fullscreen slideshow
+fehrust -F -D 10 'C:\Photos'
 ```
 
 ## Keyboard Shortcuts
@@ -148,6 +155,8 @@ fehrust --auto-reload C:\Screenshots
 | `s` | Save a copy of the current image |
 | `w` | Set current image as desktop wallpaper |
 | `Del` | Remove image from list (not from disk) |
+| `e` | Delete current image from disk |
+| `m` | Move current image to the `--move` directory |
 | `Enter` | Execute default action (`--action`) |
 | `1`–`9` | Execute custom action (`--action1` through `--action9`) |
 | `q` | Quit |
@@ -193,6 +202,7 @@ All keybindings are configurable with `--key-binding "key action"`.
 | `--start-at FILE` | Start at a specific file |
 | `--min-dimension WxH` | Only show images at least this large |
 | `--max-dimension WxH` | Only show images at most this large |
+| `--move DIRECTORY` | Set the destination directory used by the `m` shortcut; creates it if needed |
 
 ### Modes
 
@@ -357,4 +367,4 @@ Releases are Windows x86_64 GitHub Releases created by `.github/workflows/releas
    git push origin v0.1.2
    ```
 
-Pushing the tag starts the Windows release workflow. It builds and tests the project, packages `fehrust.exe`, `README.md`, and any license files into `fehrust-v0.1.2-windows-x86_64.zip`, and creates a GitHub Release with generated release notes.
+Pushing the tag starts the Windows release workflow. It builds and tests the project, packages `fehrust.exe`, `README.md`, and any license files into `fehrust-v0.1.2-windows-x86_64.zip`, creates and validates an Inno Setup installer at `installer\fehrust.iss`, and publishes both artifacts in a GitHub Release with generated release notes. The installer supports a per-user installation, optional desktop shortcuts, and image file associations.

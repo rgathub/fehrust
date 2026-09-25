@@ -90,6 +90,10 @@ impl Renderer {
         Ok(())
     }
 
+    pub fn clear_bitmap(&mut self) {
+        self.current_bitmap = None;
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn render(
         &self,

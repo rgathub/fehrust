@@ -112,6 +112,10 @@ pub struct Options {
     #[arg(long)]
     pub max_dimension: Option<String>,
 
+    /// Directory to move the current image to when pressing m
+    #[arg(long = "move", value_name = "DIRECTORY")]
+    pub move_to: Option<String>,
+
     /// Load file list from a text file (one path per line)
     #[arg(long)]
     pub filelist: Option<String>,
@@ -401,6 +405,12 @@ mod tests {
     #[test]
     fn parse_dimension_none() {
         assert_eq!(Options::parse_dimension(&None), None);
+    }
+
+    #[test]
+    fn move_destination() {
+        let opts = Options::parse_from(["fehrust", "--move", "C:\\Moved", "test.jpg"]);
+        assert_eq!(opts.move_to, Some("C:\\Moved".to_string()));
     }
 
     // --- numbered_actions ---
