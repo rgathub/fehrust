@@ -213,6 +213,7 @@ All keybindings are configurable with `--key-binding "key action"`.
 | `--index` | Contact sheet / index mode |
 | `--multiwindow` | Open each image in a separate window |
 | `-L`, `--list` | Print file info to stdout and exit |
+| `--list-format FORMAT` | Format used by `--list` (default: `%f\t%wx%h\t%s`) |
 | `--customlist FORMAT` | Print custom-formatted file info and exit |
 | `--loadable` | Print paths of loadable images and exit |
 | `--unloadable` | Print paths of unloadable images and exit |
@@ -237,7 +238,8 @@ All keybindings are configurable with `--key-binding "key action"`.
 
 ## Format Strings
 
-Used in `--title`, `--list-format`, `--customlist`, and `--action`:
+`--title`, `--list-format`, and `--customlist` support these format
+specifiers:
 
 | Specifier | Expands to |
 |-----------|------------|
@@ -251,6 +253,9 @@ Used in `--title`, `--list-format`, `--customlist`, and `--action`:
 | `%s` | File size (bytes) |
 | `%v` | fehrust version |
 | `%a` | Playing/paused status |
+
+Custom actions use a smaller expansion set: `%f` (full path), `%n` (file
+name), `%u` (1-based index), `%l` (total count), and `%%` (literal percent).
 
 ## Architecture
 
