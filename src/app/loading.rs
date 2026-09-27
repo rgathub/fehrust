@@ -37,15 +37,24 @@ impl AppState {
             let hwnd_raw = self.hwnd.0 as isize;
             let load_cancel = Arc::clone(&self.load_cancel);
             let background_cancel = Arc::clone(&self.background_cancel);
+            let metrics_enabled = self.metrics.enabled();
             let handle = thread::spawn(move || {
                 if background_cancel.load(Ordering::Acquire)
                     || load_cancel.load(Ordering::Acquire) != load_id
                 {
                     return;
                 }
+                let started = std::time::Instant::now();
                 let result = ImageLoader::new()
                     .and_then(|loader| loader.decode_pixels(&path))
                     .map_err(|error| format!("Failed to load {}: {error}", path.display()));
+                if metrics_enabled {
+                    eprintln!(
+                        "[perf] operation=image_decode duration_ms={} path={}",
+                        started.elapsed().as_secs_f64() * 1000.0,
+                        path.display()
+                    );
+                }
                 if background_cancel.load(Ordering::Acquire)
                     || load_cancel.load(Ordering::Acquire) != load_id
                 {
@@ -143,6 +152,7 @@ impl AppState {
                 let queue = Arc::clone(&queue);
                 let tx = tx.clone();
                 let cancel = Arc::clone(&self.background_cancel);
+                let metrics_enabled = self.metrics.enabled();
                 let handle = thread::spawn(move || {
                     loop {
                         if cancel.load(Ordering::Acquire) {
@@ -152,6 +162,7 @@ impl AppState {
                         let Some(url) = url else {
                             break;
                         };
+                        let started = std::time::Instant::now();
                         let result = crate::http::fetch_image(&url)
                             .map(crate::filelist::FehFile::new)
                             .map_err(|error| format!("Failed to fetch {url}: {error}"));
@@ -160,6 +171,13 @@ impl AppState {
                         }
                         if tx.send(result).is_err() {
                             break;
+                        }
+                        if metrics_enabled {
+                            eprintln!(
+                                "[perf] operation=remote_fetch duration_ms={} url={}",
+                                started.elapsed().as_secs_f64() * 1000.0,
+                                url
+                            );
                         }
                         unsafe {
                             let hwnd = HWND(hwnd_raw as *mut _);
@@ -181,6 +199,7 @@ impl AppState {
         let tx = self.discovery_tx.clone();
         let hwnd_raw = hwnd.0 as isize;
         let cancel = Arc::clone(&self.background_cancel);
+        let metrics_enabled = self.metrics.enabled();
         let handle = thread::spawn(move || {
             for file in crate::filelist::FileList::discover_recursive(&paths) {
                 if cancel.load(Ordering::Acquire) {
@@ -188,6 +207,9 @@ impl AppState {
                 }
                 if tx.send(file).is_err() {
                     return;
+                }
+                if metrics_enabled {
+                    eprintln!("[perf] operation=recursive_discovery item=1");
                 }
                 unsafe {
                     let hwnd = HWND(hwnd_raw as *mut _);

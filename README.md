@@ -236,6 +236,7 @@ All keybindings are configurable with `--key-binding "key action"`.
 |------|-------------|
 | `-q`, `--quiet` | Suppress non-error output |
 | `--verbose` | Verbose output |
+| `--performance-metrics` | Log image loading, network, discovery, and rendering timings to stderr |
 
 ## Format Strings
 

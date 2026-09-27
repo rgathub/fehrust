@@ -5,6 +5,17 @@ fn default_opts() -> Options {
     Options::parse_from(["fehrust", "test.jpg"])
 }
 
+#[test]
+fn performance_metrics_are_disabled_by_default() {
+    assert!(!default_opts().performance_metrics);
+}
+
+#[test]
+fn performance_metrics_flag_is_parsed() {
+    let opts = Options::parse_from(["fehrust", "--performance-metrics", "test.jpg"]);
+    assert!(opts.performance_metrics);
+}
+
 // --- on_last_slide_action ---
 
 #[test]

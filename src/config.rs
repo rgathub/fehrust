@@ -60,6 +60,10 @@ pub struct Options {
     #[arg(long)]
     pub verbose: bool,
 
+    /// Log image loading, network, discovery, and rendering timings to stderr
+    #[arg(long)]
+    pub performance_metrics: bool,
+
     /// Borderless window
     #[arg(short = 'x', long)]
     pub borderless: bool,

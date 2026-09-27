@@ -28,10 +28,14 @@ impl AppState {
     }
 
     pub fn paint(&mut self) -> windows::core::Result<()> {
+        let started = std::time::Instant::now();
         // Thumbnail / index mode rendering
         if let Some(ref mut thumb_view) = self.thumbnail_view {
             if let Some(rt) = self.renderer.render_target() {
-                return thumb_view.render(rt, &self.filelist, &self.image_loader);
+                let result = thumb_view.render(rt, &self.filelist, &self.image_loader);
+                self.metrics
+                    .log("thumbnail_render", started, "mode=thumbnail");
+                return result;
             }
             return Ok(());
         }
@@ -61,6 +65,7 @@ impl AppState {
             &info_text,
             self.dpi_scale,
         );
+        self.metrics.log("frame_render", started, "mode=image");
         if result.is_err() {
             self.renderer.recreate_render_target(
                 self.hwnd,

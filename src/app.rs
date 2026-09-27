@@ -68,6 +68,7 @@ pub struct AppState {
     pub filelist: FileList,
     pub image_loader: ImageLoader,
     pub renderer: Renderer,
+    pub metrics: crate::metrics::PerformanceMetrics,
     pub current_image: Option<LoadedImage>,
     pub current_exif: Option<exif::ExifInfo>,
     pub hwnd: HWND,
@@ -120,6 +121,7 @@ impl AppState {
     pub fn new(options: Options) -> windows::core::Result<Self> {
         let renderer = Renderer::new()?;
         let image_loader = ImageLoader::new()?;
+        let metrics = crate::metrics::PerformanceMetrics::new(options.performance_metrics);
 
         let has_remote_urls = options
             .files
@@ -184,6 +186,7 @@ impl AppState {
             filelist,
             image_loader,
             renderer,
+            metrics,
             current_image: None,
             current_exif: None,
             hwnd: HWND::default(),
@@ -333,6 +336,7 @@ pub fn run_multiwindow(options: Options) -> windows::core::Result<()> {
         let (remote_image_tx, remote_image_rx) = mpsc::channel();
         let (discovery_tx, discovery_rx) = mpsc::channel();
         let background_cancel = Arc::new(AtomicBool::new(false));
+        let metrics = crate::metrics::PerformanceMetrics::new(options.performance_metrics);
 
         let title = file.name.clone();
         let hwnd = window::create_window(
@@ -347,6 +351,7 @@ pub fn run_multiwindow(options: Options) -> windows::core::Result<()> {
             options: single_opts,
             filelist: single_list,
             renderer,
+            metrics,
             image_loader,
             current_image: None,
             current_exif: None,
