@@ -183,4 +183,25 @@ mod tests {
         let b = url_to_filename("http://example.com/b.jpg");
         assert_ne!(a, b);
     }
+
+    #[test]
+    fn url_to_filename_ignores_query_string() {
+        assert!(url_to_filename("https://example.com/photo.JPEG?size=large").ends_with(".jpeg"));
+    }
+
+    #[test]
+    fn url_to_filename_rejects_invalid_extensions() {
+        assert!(url_to_filename("https://example.com/photo.verylongextension").ends_with(".jpg"));
+        assert!(url_to_filename("https://example.com/photo.bad-ext").ends_with(".jpg"));
+    }
+
+    #[test]
+    fn evict_cache_ignores_missing_directory_and_subdirectories() {
+        let temp = tempfile::tempdir().unwrap();
+        let nested = temp.path().join("nested");
+        std::fs::create_dir(&nested).unwrap();
+        evict_cache(temp.path());
+        evict_cache(&temp.path().join("missing"));
+        assert!(nested.is_dir());
+    }
 }

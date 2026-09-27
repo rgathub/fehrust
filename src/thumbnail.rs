@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use windows::Win32::Graphics::Direct2D::Common::*;
 use windows::Win32::Graphics::Direct2D::*;
@@ -12,6 +12,7 @@ const THUMB_PADDING: f32 = 10.0;
 const LABEL_HEIGHT: f32 = 18.0;
 const INDEX_THUMB_SIZE: f32 = 80.0;
 const INDEX_PADDING: f32 = 6.0;
+const MAX_CACHED_THUMBNAILS: usize = 128;
 
 /// Cell dimensions for a thumbnail grid
 struct CellMetrics {
@@ -48,6 +49,7 @@ impl CellMetrics {
 pub struct ThumbnailView {
     /// Cached bitmaps keyed by file index
     cache: HashMap<usize, ID2D1Bitmap>,
+    recent: VecDeque<usize>,
     /// Scroll offset in pixels (positive = scrolled down)
     pub scroll_y: f32,
     /// Whether this is an index/contact sheet view (smaller cells)
@@ -60,6 +62,7 @@ impl ThumbnailView {
     pub fn new(index_mode: bool) -> Self {
         Self {
             cache: HashMap::new(),
+            recent: VecDeque::new(),
             scroll_y: 0.0,
             index_mode,
             selected: 0,
@@ -193,10 +196,20 @@ impl ThumbnailView {
                 // Load thumbnail bitmap on demand
                 if !self.cache.contains_key(&idx)
                     && let Some(file) = filelist.file_at(idx)
-                    && let Ok(img) = image_loader.load(&file.path)
+                    && let Ok(img) = image_loader.load_thumbnail(&file.path, m.thumb_size as u32)
                     && let Ok(bmp) = rt.CreateBitmapFromWicBitmap(&img.wic_bitmap, None)
                 {
                     self.cache.insert(idx, bmp);
+                }
+
+                if self.cache.contains_key(&idx) {
+                    self.recent.retain(|cached| *cached != idx);
+                    self.recent.push_back(idx);
+                    while self.recent.len() > MAX_CACHED_THUMBNAILS {
+                        if let Some(oldest) = self.recent.pop_front() {
+                            self.cache.remove(&oldest);
+                        }
+                    }
                 }
 
                 // Draw the thumbnail
@@ -282,5 +295,41 @@ fn truncate_name(name: &str, max_chars: usize) -> String {
         format!("{truncated}…")
     } else {
         name.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncate_name_preserves_short_names() {
+        assert_eq!(truncate_name("photo.jpg", 16), "photo.jpg");
+    }
+
+    #[test]
+    fn truncate_name_adds_ellipsis() {
+        assert_eq!(truncate_name("a-very-long-name.jpg", 10), "a-very-lo…");
+    }
+
+    #[test]
+    fn thumbnail_grid_metrics_and_scroll_are_bounded() {
+        let view = ThumbnailView::new(false);
+        assert_eq!(view.cols_for(300.0), 2);
+        assert_eq!(view.total_height(10, 300.0), 790.0);
+
+        let mut view = ThumbnailView::new(false);
+        view.scroll(-500.0, 10, 300.0, 200.0);
+        assert_eq!(view.scroll_y, 0.0);
+        view.scroll(10_000.0, 10, 300.0, 200.0);
+        assert_eq!(view.scroll_y, 590.0);
+    }
+
+    #[test]
+    fn thumbnail_click_maps_to_index() {
+        let view = ThumbnailView::new(false);
+        assert_eq!(view.handle_click(10.0, 10.0, 300.0), Some(0));
+        assert_eq!(view.handle_click(150.0, 10.0, 300.0), Some(1));
+        assert_eq!(view.handle_click(500.0, 10.0, 300.0), None);
     }
 }

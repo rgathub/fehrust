@@ -5,19 +5,31 @@ use crate::config::{Options, ViewMode};
 use crate::exif;
 use crate::filelist::FileList;
 use crate::format::expand_format;
-use crate::image_loader::{ImageLoader, LoadedImage};
+use crate::image_loader::{DecodedImage, ImageLoader, LoadedImage};
 use crate::keybindings::{self, KeyMap};
 use crate::renderer::Renderer;
 use crate::thumbnail::ThumbnailView;
 use crate::transforms;
 use crate::window;
 
+use std::collections::VecDeque;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, Receiver};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, AtomicU64, Ordering},
+};
+use std::thread;
 
 const SLIDESHOW_TIMER_ID: usize = 1;
 const DEFAULT_WIDTH: u32 = 800;
 const DEFAULT_HEIGHT: u32 = 600;
+pub const WM_REMOTE_IMAGE: u32 = WM_USER + 2;
+pub const WM_IMAGE_LOADED: u32 = WM_USER + 3;
+pub const WM_FILE_DISCOVERED: u32 = WM_USER + 4;
+
+type ImageLoadMessage = (u64, PathBuf, Result<DecodedImage, String>);
 
 fn slideshow_timer_ms(delay: Option<f64>) -> Option<u32> {
     let delay = delay?;
@@ -47,8 +59,8 @@ fn move_file(path: &Path, target: &Path) -> io::Result<()> {
 pub struct AppState {
     pub options: Options,
     pub filelist: FileList,
-    pub renderer: Renderer,
     pub image_loader: ImageLoader,
+    pub renderer: Renderer,
     pub current_image: Option<LoadedImage>,
     pub current_exif: Option<exif::ExifInfo>,
     pub hwnd: HWND,
@@ -82,7 +94,16 @@ pub struct AppState {
 
     // Thumbnail mode
     pub thumbnail_view: Option<ThumbnailView>,
-
+    image_load_tx: mpsc::Sender<ImageLoadMessage>,
+    image_load_rx: Receiver<ImageLoadMessage>,
+    load_cancel: Arc<AtomicU64>,
+    remote_image_tx: mpsc::Sender<Result<crate::filelist::FehFile, String>>,
+    remote_image_rx: Receiver<Result<crate::filelist::FehFile, String>>,
+    discovery_tx: mpsc::Sender<crate::filelist::FehFile>,
+    discovery_rx: Receiver<crate::filelist::FehFile>,
+    next_load_id: u64,
+    pub(crate) watcher: Option<crate::filewatcher::WatcherHandle>,
+    pub(crate) background_cancel: Arc<AtomicBool>,
     window_width: u32,
     window_height: u32,
 }
@@ -92,13 +113,21 @@ impl AppState {
         let renderer = Renderer::new()?;
         let image_loader = ImageLoader::new()?;
 
+        let has_remote_urls = options
+            .files
+            .iter()
+            .any(|path| crate::filelist::is_remote_url(path));
         let mut filelist = if let Some(ref fl_path) = options.filelist {
             FileList::from_filelist(Path::new(fl_path))
+        } else if has_remote_urls || options.recursive {
+            FileList::collect_local(&options.files, false)
         } else {
             FileList::collect(&options.files, options.recursive)
         };
 
-        if filelist.is_empty() {
+        let has_recursive_directories =
+            options.recursive && options.files.iter().any(|path| Path::new(path).is_dir());
+        if filelist.is_empty() && !has_remote_urls && !has_recursive_directories {
             return Err(windows::core::Error::new(E_FAIL, "No image files found"));
         }
 
@@ -136,12 +165,17 @@ impl AppState {
 
         let keybindings = keybindings::build_keymap(&options.key_binding);
         let numbered_actions = options.numbered_actions();
+        let (image_load_tx, image_load_rx) = mpsc::channel();
+        let load_cancel = Arc::new(AtomicU64::new(0));
+        let (remote_image_tx, remote_image_rx) = mpsc::channel();
+        let (discovery_tx, discovery_rx) = mpsc::channel();
+        let background_cancel = Arc::new(AtomicBool::new(false));
 
         Ok(Self {
             options,
             filelist,
-            renderer,
             image_loader,
+            renderer,
             current_image: None,
             current_exif: None,
             hwnd: HWND::default(),
@@ -162,6 +196,16 @@ impl AppState {
             keybindings,
             numbered_actions,
             thumbnail_view: None,
+            image_load_tx,
+            image_load_rx,
+            load_cancel,
+            remote_image_tx,
+            remote_image_rx,
+            discovery_tx,
+            discovery_rx,
+            next_load_id: 0,
+            watcher: None,
+            background_cancel,
             window_width: DEFAULT_WIDTH,
             window_height: DEFAULT_HEIGHT,
         })
@@ -173,6 +217,7 @@ impl AppState {
         self.rotation = 0.0;
         self.flip_h = false;
         self.flip_v = false;
+        self.renderer.clear_bitmap();
         self.current_exif = None;
         self.current_caption = None;
 
@@ -193,8 +238,69 @@ impl AppState {
                 }
             }
 
-            match self.image_loader.load(&file.path) {
-                Ok(image) => {
+            self.current_exif = exif_info;
+            self.next_load_id = self.next_load_id.wrapping_add(1);
+            let load_id = self.next_load_id;
+            self.load_cancel.store(load_id, Ordering::Release);
+            let path = file.path.clone();
+            let tx = self.image_load_tx.clone();
+            let hwnd_raw = self.hwnd.0 as isize;
+            let load_cancel = Arc::clone(&self.load_cancel);
+            thread::spawn(move || {
+                if load_cancel.load(Ordering::Acquire) != load_id {
+                    return;
+                }
+                let result = ImageLoader::new()
+                    .and_then(|loader| loader.decode_pixels(&path))
+                    .map_err(|error| format!("Failed to load {}: {error}", path.display()));
+                if load_cancel.load(Ordering::Acquire) != load_id {
+                    return;
+                }
+                let _ = tx.send((load_id, path, result));
+                if hwnd_raw != 0 {
+                    unsafe {
+                        let hwnd = HWND(hwnd_raw as *mut _);
+                        let _ = PostMessageW(Some(hwnd), WM_IMAGE_LOADED, WPARAM(0), LPARAM(0));
+                    }
+                }
+            });
+        }
+
+        self.refresh_watcher();
+        self.update_title();
+    }
+
+    fn refresh_watcher(&mut self) {
+        if !self.options.auto_reload || self.hwnd == HWND::default() {
+            return;
+        }
+        if let Some(watcher) = self.watcher.take() {
+            watcher.stop();
+        }
+        if let Some(parent) = self.filelist.current().and_then(|file| file.path.parent()) {
+            self.watcher = Some(crate::filewatcher::start_watcher(
+                parent.to_path_buf(),
+                self.hwnd,
+            ));
+        }
+    }
+
+    pub fn process_image_loads(&mut self, hwnd: HWND) {
+        while let Ok((load_id, path, result)) = self.image_load_rx.try_recv() {
+            let current_path = self.filelist.current().map(|file| file.path.clone());
+            if load_id != self.next_load_id || current_path.as_ref() != Some(&path) {
+                continue;
+            }
+
+            match result {
+                Ok(decoded) => {
+                    let image = match self.image_loader.loaded_from_pixels(decoded) {
+                        Ok(image) => image,
+                        Err(error) => {
+                            eprintln!("Failed to create WIC image: {error}");
+                            continue;
+                        }
+                    };
                     if let Err(e) = self
                         .renderer
                         .load_bitmap(&image, self.image_loader.wic_factory())
@@ -204,8 +310,7 @@ impl AppState {
                     self.current_image = Some(image);
                     self.zoom_to_fit();
 
-                    // Apply EXIF auto-rotation
-                    if let Some(ref exif) = exif_info
+                    if let Some(ref exif) = self.current_exif
                         && exif.orientation != 1
                     {
                         let (rot, fh, fv) = exif::exif_orientation_to_rotation(exif.orientation);
@@ -214,16 +319,135 @@ impl AppState {
                         self.flip_v = fv;
                     }
                 }
-                Err(e) => {
-                    eprintln!("Failed to load {}: {e}", file.path.display());
+                Err(error) => {
+                    eprintln!("{error}");
                     self.current_image = None;
                 }
             }
+            self.update_title();
+            window::invalidate(hwnd);
+        }
+    }
 
-            self.current_exif = exif_info;
+    pub fn start_background_tasks(&mut self, hwnd: HWND) {
+        let urls: Vec<String> = self
+            .options
+            .files
+            .iter()
+            .filter(|path| crate::filelist::is_remote_url(path))
+            .cloned()
+            .collect();
+        if !urls.is_empty() {
+            let queue = Arc::new(Mutex::new(VecDeque::from(urls)));
+            let tx = self.remote_image_tx.clone();
+            let hwnd_raw = hwnd.0 as isize;
+            for _ in 0..4 {
+                let queue = Arc::clone(&queue);
+                let tx = tx.clone();
+                let cancel = Arc::clone(&self.background_cancel);
+                thread::spawn(move || {
+                    loop {
+                        if cancel.load(Ordering::Acquire) {
+                            break;
+                        }
+                        let url = queue.lock().ok().and_then(|mut urls| urls.pop_front());
+                        let Some(url) = url else {
+                            break;
+                        };
+                        let result = crate::http::fetch_image(&url)
+                            .map(crate::filelist::FehFile::new)
+                            .map_err(|error| format!("Failed to fetch {url}: {error}"));
+                        if cancel.load(Ordering::Acquire) {
+                            break;
+                        }
+                        if tx.send(result).is_err() {
+                            break;
+                        }
+                        unsafe {
+                            let hwnd = HWND(hwnd_raw as *mut _);
+                            let _ = PostMessageW(Some(hwnd), WM_REMOTE_IMAGE, WPARAM(0), LPARAM(0));
+                        }
+                    }
+                });
+            }
         }
 
+        if self.options.recursive && self.options.filelist.is_none() {
+            let paths = self.options.files.clone();
+            let tx = self.discovery_tx.clone();
+            let hwnd_raw = hwnd.0 as isize;
+            let cancel = Arc::clone(&self.background_cancel);
+            thread::spawn(move || {
+                for file in crate::filelist::FileList::discover_recursive(&paths) {
+                    if cancel.load(Ordering::Acquire) {
+                        return;
+                    }
+                    if tx.send(file).is_err() {
+                        return;
+                    }
+                    unsafe {
+                        let hwnd = HWND(hwnd_raw as *mut _);
+                        let _ = PostMessageW(Some(hwnd), WM_FILE_DISCOVERED, WPARAM(0), LPARAM(0));
+                    }
+                }
+            });
+        }
+    }
+
+    pub fn process_remote_images(&mut self, hwnd: HWND) {
+        let mut added = false;
+        while let Ok(result) = self.remote_image_rx.try_recv() {
+            match result {
+                Ok(file) => {
+                    self.filelist.append(file);
+                    added = true;
+                }
+                Err(error) => eprintln!("{error}"),
+            }
+        }
+        if added {
+            let current_path = self.filelist.current().map(|file| file.path.clone());
+            if self.options.randomize {
+                self.filelist.randomize();
+            } else {
+                self.filelist
+                    .sort_by(&self.options.sort, self.options.reverse);
+            }
+            if let Some(path) = current_path {
+                self.filelist.jump_to(&path.to_string_lossy());
+            }
+            if self.current_image.is_none() {
+                self.load_current_image();
+            }
+            self.update_title();
+            window::invalidate(hwnd);
+        }
+    }
+
+    pub fn process_discovered_files(&mut self, hwnd: HWND) {
+        let mut added = false;
+        while let Ok(file) = self.discovery_rx.try_recv() {
+            self.filelist.append(file);
+            added = true;
+        }
+        if !added {
+            return;
+        }
+        let current_path = self.filelist.current().map(|file| file.path.clone());
+        if self.options.randomize {
+            self.filelist.randomize();
+        } else {
+            self.filelist
+                .sort_by(&self.options.sort, self.options.reverse);
+        }
+        if let Some(path) = current_path {
+            self.filelist.jump_to(&path.to_string_lossy());
+        }
+        if self.current_image.is_none() {
+            self.load_current_image();
+        }
         self.update_title();
+        window::invalidate(hwnd);
     }
 
     pub fn zoom_to_fit(&mut self) {
@@ -273,7 +497,7 @@ impl AppState {
             String::new()
         };
 
-        self.renderer.render(
+        let result = self.renderer.render(
             self.zoom,
             self.pan_x,
             self.pan_y,
@@ -285,13 +509,34 @@ impl AppState {
             self.options.draw_info,
             &info_text,
             self.dpi_scale,
-        )
+        );
+        if result.is_err() {
+            self.renderer.recreate_render_target(
+                self.hwnd,
+                self.window_width,
+                self.window_height,
+            )?;
+            if let Some(image) = self.current_image.as_ref() {
+                self.renderer
+                    .load_bitmap(image, self.image_loader.wic_factory())?;
+            }
+            window::invalidate(self.hwnd);
+            return Ok(());
+        }
+        result
     }
 
     pub fn handle_resize(&mut self, width: u32, height: u32) -> windows::core::Result<()> {
         self.window_width = width;
         self.window_height = height;
-        self.renderer.resize(width, height)?;
+        if self.renderer.resize(width, height).is_err() {
+            self.renderer
+                .recreate_render_target(self.hwnd, width, height)?;
+            if let Some(image) = self.current_image.as_ref() {
+                self.renderer
+                    .load_bitmap(image, self.image_loader.wic_factory())?;
+            }
+        }
 
         // Re-fit image on resize if we're at fit-to-window zoom
         if self.options.scale_down {
@@ -540,11 +785,16 @@ pub fn run(options: Options) -> windows::core::Result<()> {
 
     // Start file watcher if --auto-reload is set
     if auto_reload
+        && state.watcher.is_none()
         && let Some(file) = state.filelist.current()
         && let Some(parent) = file.path.parent()
     {
-        crate::filewatcher::start_watcher(parent.to_path_buf(), hwnd);
+        state.watcher = Some(crate::filewatcher::start_watcher(
+            parent.to_path_buf(),
+            hwnd,
+        ));
     }
+    state.start_background_tasks(hwnd);
 
     // Enter message loop
     window::run_message_loop();
@@ -666,6 +916,11 @@ pub fn run_multiwindow(options: Options) -> windows::core::Result<()> {
         let image_loader = ImageLoader::new()?;
         let keybindings = keybindings::build_keymap(&single_opts.key_binding);
         let numbered_actions = single_opts.numbered_actions();
+        let (image_load_tx, image_load_rx) = mpsc::channel();
+        let load_cancel = Arc::new(AtomicU64::new(0));
+        let (remote_image_tx, remote_image_rx) = mpsc::channel();
+        let (discovery_tx, discovery_rx) = mpsc::channel();
+        let background_cancel = Arc::new(AtomicBool::new(false));
 
         let title = file.name.clone();
         let hwnd = window::create_window(
@@ -701,6 +956,16 @@ pub fn run_multiwindow(options: Options) -> windows::core::Result<()> {
             keybindings,
             numbered_actions,
             thumbnail_view: None,
+            image_load_tx,
+            image_load_rx,
+            load_cancel,
+            remote_image_tx,
+            remote_image_rx,
+            discovery_tx,
+            discovery_rx,
+            next_load_id: 0,
+            watcher: None,
+            background_cancel,
             window_width: init_w,
             window_height: init_h,
         };

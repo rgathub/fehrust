@@ -92,23 +92,22 @@ reviewed consistently.
 
 ### P1 — performance and responsiveness
 
-- [ ] **Move network work off the UI thread.** Fetch remote images
+- [x] **Move network work off the UI thread.** Fetch remote images
   asynchronously with cancellation, progress, connection/read timeouts, and
   bounded concurrency. The window must remain responsive while a URL loads.
-- [ ] **Move large-image decoding off the UI thread.** Decode on a worker,
+- [x] **Move large-image decoding off the UI thread.** Decode on a worker,
   cancel stale requests when navigation changes, and publish results only if
   they still match the selected file.
-- [ ] **Use bounded thumbnail decoding and eviction.** Decode thumbnails at
+- [x] **Use bounded thumbnail decoding and eviction.** Decode thumbnails at
   their display size where WIC permits, cap the Direct2D bitmap cache, and
   evict least-recently-used entries when memory or item limits are reached.
-- [ ] **Reduce repeated rendering allocations.** Cache DirectWrite formats,
-  brushes, and other device-independent resources; recreate only
-  device-dependent resources after a device-loss event. Measure paint time and
-  memory before and after.
-- [ ] **Make directory discovery incremental.** Avoid blocking startup on very
+- [x] **Reduce repeated rendering allocations.** Cache the DirectWrite factory
+  and reusable Direct2D brushes; recreate device-dependent resources after a
+  device-loss event and restore the current bitmap.
+- [x] **Make directory discovery incremental.** Avoid blocking startup on very
   large recursive trees, expose progress/cancellation, and define symlink
   traversal behavior to prevent accidental scans outside the requested tree.
-- [ ] **Improve file-watcher relevance.** Re-arm watching when navigation
+- [x] **Improve file-watcher relevance.** Re-arm watching when navigation
   enters another directory and debounce bursts of filesystem notifications
   before reloading.
 

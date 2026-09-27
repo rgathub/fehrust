@@ -343,7 +343,7 @@ unsafe extern "system" fn wnd_proc(
             let reverse = state.options.reverse;
             let current_path = state.filelist.current().map(|f| f.path.clone());
 
-            let mut new_filelist = crate::filelist::FileList::collect(&files, recursive);
+            let mut new_filelist = crate::filelist::FileList::collect_local(&files, recursive);
             new_filelist.sort_by(&sort, reverse);
 
             // Try to stay on the same file
@@ -358,7 +358,25 @@ unsafe extern "system" fn wnd_proc(
             }
             LRESULT(0)
         }
+        x if x == crate::app::WM_REMOTE_IMAGE => {
+            state.process_remote_images(hwnd);
+            LRESULT(0)
+        }
+        x if x == crate::app::WM_IMAGE_LOADED => {
+            state.process_image_loads(hwnd);
+            LRESULT(0)
+        }
+        x if x == crate::app::WM_FILE_DISCOVERED => {
+            state.process_discovered_files(hwnd);
+            LRESULT(0)
+        }
         WM_DESTROY => {
+            state
+                .background_cancel
+                .store(true, std::sync::atomic::Ordering::Release);
+            if let Some(watcher) = state.watcher.take() {
+                watcher.stop();
+            }
             unsafe { PostQuitMessage(0) };
             LRESULT(0)
         }
