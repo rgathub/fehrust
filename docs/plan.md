@@ -29,7 +29,8 @@ Features that depend on X11, POSIX signals, terminal control, or feh's
 The main modules are described in the architecture section of the
 [README](../README.md). The implementation is currently organized around:
 
-- CLI and early-exit modes in `config.rs` and `app.rs`.
+- CLI and early-exit modes in `config.rs` and `app/modes.rs`; application
+  state and orchestration remain in `app.rs`.
 - File discovery, sorting, filtering, navigation, and file-list persistence
   in `filelist.rs`.
 - WIC loading/saving in `image_loader.rs`.
