@@ -111,6 +111,7 @@ pub struct AppState {
     next_load_id: u64,
     pub(crate) watcher: Option<crate::filewatcher::WatcherHandle>,
     pub(crate) background_cancel: Arc<AtomicBool>,
+    pub(crate) worker_handles: Vec<thread::JoinHandle<()>>,
     window_width: u32,
     window_height: u32,
 }
@@ -213,6 +214,7 @@ impl AppState {
             next_load_id: 0,
             watcher: None,
             background_cancel,
+            worker_handles: Vec::new(),
             window_width: DEFAULT_WIDTH,
             window_height: DEFAULT_HEIGHT,
         })
@@ -376,6 +378,7 @@ pub fn run_multiwindow(options: Options) -> windows::core::Result<()> {
             next_load_id: 0,
             watcher: None,
             background_cancel,
+            worker_handles: Vec::new(),
             window_width: init_w,
             window_height: init_h,
         };

@@ -36,14 +36,19 @@ impl AppState {
             let tx = self.image_load_tx.clone();
             let hwnd_raw = self.hwnd.0 as isize;
             let load_cancel = Arc::clone(&self.load_cancel);
-            thread::spawn(move || {
-                if load_cancel.load(Ordering::Acquire) != load_id {
+            let background_cancel = Arc::clone(&self.background_cancel);
+            let handle = thread::spawn(move || {
+                if background_cancel.load(Ordering::Acquire)
+                    || load_cancel.load(Ordering::Acquire) != load_id
+                {
                     return;
                 }
                 let result = ImageLoader::new()
                     .and_then(|loader| loader.decode_pixels(&path))
                     .map_err(|error| format!("Failed to load {}: {error}", path.display()));
-                if load_cancel.load(Ordering::Acquire) != load_id {
+                if background_cancel.load(Ordering::Acquire)
+                    || load_cancel.load(Ordering::Acquire) != load_id
+                {
                     return;
                 }
                 let _ = tx.send((load_id, path, result));
@@ -54,6 +59,7 @@ impl AppState {
                     }
                 }
             });
+            self.worker_handles.push(handle);
         }
 
         self.refresh_watcher();
@@ -126,6 +132,8 @@ impl AppState {
             .iter()
             .filter(|path| crate::filelist::is_remote_url(path))
             .cloned()
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
             .collect();
         if !urls.is_empty() {
             let queue = Arc::new(Mutex::new(VecDeque::from(urls)));
@@ -135,7 +143,7 @@ impl AppState {
                 let queue = Arc::clone(&queue);
                 let tx = tx.clone();
                 let cancel = Arc::clone(&self.background_cancel);
-                thread::spawn(move || {
+                let handle = thread::spawn(move || {
                     loop {
                         if cancel.load(Ordering::Acquire) {
                             break;
@@ -159,28 +167,45 @@ impl AppState {
                         }
                     }
                 });
+                self.worker_handles.push(handle);
             }
         }
 
         if self.options.recursive && self.options.filelist.is_none() {
-            let paths = self.options.files.clone();
-            let tx = self.discovery_tx.clone();
-            let hwnd_raw = hwnd.0 as isize;
-            let cancel = Arc::clone(&self.background_cancel);
-            thread::spawn(move || {
-                for file in crate::filelist::FileList::discover_recursive(&paths) {
-                    if cancel.load(Ordering::Acquire) {
-                        return;
-                    }
-                    if tx.send(file).is_err() {
-                        return;
-                    }
-                    unsafe {
-                        let hwnd = HWND(hwnd_raw as *mut _);
-                        let _ = PostMessageW(Some(hwnd), WM_FILE_DISCOVERED, WPARAM(0), LPARAM(0));
-                    }
+            self.start_recursive_discovery(hwnd);
+        }
+    }
+
+    pub fn start_recursive_discovery(&mut self, hwnd: HWND) {
+        let paths = self.options.files.clone();
+        let tx = self.discovery_tx.clone();
+        let hwnd_raw = hwnd.0 as isize;
+        let cancel = Arc::clone(&self.background_cancel);
+        let handle = thread::spawn(move || {
+            for file in crate::filelist::FileList::discover_recursive(&paths) {
+                if cancel.load(Ordering::Acquire) {
+                    return;
                 }
-            });
+                if tx.send(file).is_err() {
+                    return;
+                }
+                unsafe {
+                    let hwnd = HWND(hwnd_raw as *mut _);
+                    let _ = PostMessageW(Some(hwnd), WM_FILE_DISCOVERED, WPARAM(0), LPARAM(0));
+                }
+            }
+        });
+        self.worker_handles.push(handle);
+    }
+
+    pub fn stop_background_tasks(&mut self) {
+        self.background_cancel.store(true, Ordering::Release);
+        self.load_cancel.fetch_add(1, Ordering::AcqRel);
+        if let Some(watcher) = self.watcher.take() {
+            watcher.stop();
+        }
+        for handle in self.worker_handles.drain(..) {
+            let _ = handle.join();
         }
     }
 
@@ -189,13 +214,18 @@ impl AppState {
         while let Ok(result) = self.remote_image_rx.try_recv() {
             match result {
                 Ok(file) => {
-                    self.filelist.append(file);
-                    added = true;
+                    if self.accepts_dimensions(&file) {
+                        self.filelist.append(file);
+                        added = true;
+                    }
                 }
                 Err(error) => eprintln!("{error}"),
             }
         }
         if added {
+            self.thumbnail_view
+                .as_mut()
+                .map(crate::thumbnail::ThumbnailView::clear_cache);
             let current_path = self.filelist.current().map(|file| file.path.clone());
             if self.options.randomize {
                 self.filelist.randomize();
@@ -217,12 +247,22 @@ impl AppState {
     pub fn process_discovered_files(&mut self, hwnd: HWND) {
         let mut added = false;
         while let Ok(file) = self.discovery_rx.try_recv() {
-            self.filelist.append(file);
-            added = true;
+            let already_present = self
+                .filelist
+                .files()
+                .iter()
+                .any(|current| current.path == file.path);
+            if !already_present && self.accepts_dimensions(&file) {
+                self.filelist.append(file);
+                added = true;
+            }
         }
         if !added {
             return;
         }
+        self.thumbnail_view
+            .as_mut()
+            .map(crate::thumbnail::ThumbnailView::clear_cache);
         let current_path = self.filelist.current().map(|file| file.path.clone());
         if self.options.randomize {
             self.filelist.randomize();
@@ -238,5 +278,20 @@ impl AppState {
         }
         self.update_title();
         window::invalidate(hwnd);
+    }
+
+    fn accepts_dimensions(&self, file: &crate::filelist::FehFile) -> bool {
+        let min = crate::config::Options::parse_dimension(&self.options.min_dimension);
+        let max = crate::config::Options::parse_dimension(&self.options.max_dimension);
+        if min.is_none() && max.is_none() {
+            return true;
+        }
+        match self.image_loader.get_dimensions(&file.path) {
+            Ok((width, height)) => {
+                min.is_none_or(|(min_w, min_h)| width >= min_w && height >= min_h)
+                    && max.is_none_or(|(max_w, max_h)| width <= max_w && height <= max_h)
+            }
+            Err(_) => true,
+        }
     }
 }

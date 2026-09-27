@@ -1,6 +1,7 @@
 use std::fs;
 use std::io::{Read, Write};
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Maximum download size (512 MB)
 const MAX_DOWNLOAD_BYTES: u64 = 512 * 1024 * 1024;
@@ -73,10 +74,20 @@ pub fn fetch_image(url: &str) -> Result<PathBuf, String> {
         ));
     }
 
+    let temp_path = cache_dir.join(format!(
+        ".{filename}.{}.tmp",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| format!("Invalid system time: {e}"))?
+            .as_nanos()
+    ));
     let mut file =
-        fs::File::create(&cached_path).map_err(|e| format!("Cannot create cache file: {e}"))?;
+        fs::File::create(&temp_path).map_err(|e| format!("Cannot create cache file: {e}"))?;
     file.write_all(&body)
         .map_err(|e| format!("Cannot write cache file: {e}"))?;
+    file.sync_all()
+        .map_err(|e| format!("Cannot flush cache file: {e}"))?;
+    fs::rename(&temp_path, &cached_path).map_err(|e| format!("Cannot publish cache file: {e}"))?;
 
     Ok(cached_path)
 }

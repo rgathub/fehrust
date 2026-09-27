@@ -69,6 +69,11 @@ impl ThumbnailView {
         }
     }
 
+    pub fn clear_cache(&mut self) {
+        self.cache.clear();
+        self.recent.clear();
+    }
+
     fn metrics(&self) -> CellMetrics {
         if self.index_mode {
             CellMetrics::index()

@@ -67,6 +67,7 @@ fehrust -t C:\Photos
 
 # Open each image in its own window
 fehrust --multiwindow *.jpg
+# Multi-window startup resolves remote URLs synchronously before creating windows.
 
 # List image info without opening a window
 fehrust -L C:\Photos

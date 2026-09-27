@@ -10,6 +10,9 @@ use windows::{
 
 use std::os::windows::ffi::OsStrExt;
 
+const MAX_DECODED_PIXELS: u64 = 100_000_000;
+const MAX_DECODED_BYTES: u64 = 512 * 1024 * 1024;
+
 pub struct ImageLoader {
     wic_factory: IWICImagingFactory2,
     _com_guard: ComGuard,
@@ -114,6 +117,13 @@ impl ImageLoader {
             let mut width = 0u32;
             let mut height = 0u32;
             frame.GetSize(&mut width, &mut height)?;
+            let pixels = u64::from(width) * u64::from(height);
+            let bytes = pixels
+                .checked_mul(4)
+                .ok_or_else(|| Error::new(E_FAIL, "Image buffer is too large"))?;
+            if pixels > MAX_DECODED_PIXELS || bytes > MAX_DECODED_BYTES {
+                return Err(Error::new(E_FAIL, "Image exceeds decoded size limits"));
+            }
             let converter = self.wic_factory.CreateFormatConverter()?;
             converter.Initialize(
                 &frame,
