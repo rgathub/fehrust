@@ -11,6 +11,7 @@ mod input;
 mod jpeg_rotate;
 mod keybindings;
 mod menu;
+mod metrics;
 mod overlay;
 mod renderer;
 mod slideshow;
