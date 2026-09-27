@@ -147,7 +147,10 @@ impl AppState {
         let has_recursive_directories =
             options.recursive && options.files.iter().any(|path| Path::new(path).is_dir());
         if filelist.is_empty() && !has_remote_urls && !has_recursive_directories {
-            return Err(windows::core::Error::new(E_FAIL, "No image files found"));
+            return Err(windows::core::Error::new(
+                E_FAIL,
+                "No image files found\nTry --help for usage information.",
+            ));
         }
 
         // Sort
@@ -337,7 +340,10 @@ pub fn run_multiwindow(options: Options) -> windows::core::Result<()> {
         .cloned()
         .collect();
     if local_filelist.is_empty() && remote_urls.is_empty() {
-        return Err(windows::core::Error::new(E_FAIL, "No image files found"));
+        return Err(windows::core::Error::new(
+            E_FAIL,
+            "No image files found\nTry --help for usage information.",
+        ));
     }
 
     // Create one AppState per window, each with a single-file filelist.
