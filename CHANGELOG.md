@@ -1,10 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+- Added MIT license text and open-source project policies.
+- Added contributor, security, and code-of-conduct documentation.
+- Added Dependabot updates and a scheduled Cargo dependency audit.
+
 ## [0.2.1] - 2026-09-24
 
 - Installer no longer offers a desktop shortcut and adds its per-user install directory to `PATH`.
-
-## [Unreleased]
 
 ## [0.2.0] - 2026-09-24
 
