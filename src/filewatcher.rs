@@ -1,6 +1,11 @@
 use std::os::windows::ffi::OsStrExt;
 use std::path::PathBuf;
-use std::thread;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::*;
 use windows::Win32::Storage::FileSystem::*;
@@ -8,23 +13,41 @@ use windows::Win32::System::Threading::WaitForSingleObject;
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::PCWSTR;
 
-/// Custom message posted when directory contents change
+/// Custom message posted when directory contents change.
 pub const WM_FILE_CHANGED: u32 = WM_USER + 1;
 
-/// Start a background thread that watches `dir` for file changes
-/// and posts WM_FILE_CHANGED to `hwnd` when detected.
-pub fn start_watcher(dir: PathBuf, hwnd: HWND) {
-    // HWND is not Send, so pass the raw isize value
-    let hwnd_raw = hwnd.0 as isize;
-    thread::spawn(move || {
-        let hwnd = HWND(hwnd_raw as *mut _);
-        unsafe {
-            watcher_loop(dir, hwnd);
-        }
-    });
+pub struct WatcherHandle {
+    stop: Arc<AtomicBool>,
+    thread: Option<JoinHandle<()>>,
 }
 
-unsafe fn watcher_loop(dir: PathBuf, hwnd: HWND) {
+impl WatcherHandle {
+    pub fn stop(mut self) {
+        self.stop.store(true, Ordering::Release);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+/// Start a background thread that watches `dir` for file changes.
+pub fn start_watcher(dir: PathBuf, hwnd: HWND) -> WatcherHandle {
+    let stop = Arc::new(AtomicBool::new(false));
+    let thread_stop = Arc::clone(&stop);
+    let hwnd_raw = hwnd.0 as isize;
+    let thread = thread::spawn(move || {
+        let hwnd = HWND(hwnd_raw as *mut _);
+        unsafe {
+            watcher_loop(dir, hwnd, thread_stop);
+        }
+    });
+    WatcherHandle {
+        stop,
+        thread: Some(thread),
+    }
+}
+
+unsafe fn watcher_loop(dir: PathBuf, hwnd: HWND, stop: Arc<AtomicBool>) {
     let dir_wide: Vec<u16> = dir
         .as_os_str()
         .encode_wide()
@@ -47,22 +70,42 @@ unsafe fn watcher_loop(dir: PathBuf, hwnd: HWND) {
         }
     };
 
+    let mut last_notification = Instant::now() - Duration::from_secs(1);
     loop {
-        let result = unsafe { WaitForSingleObject(handle, 2000) };
+        if stop.load(Ordering::Acquire) {
+            break;
+        }
+        let result = unsafe { WaitForSingleObject(handle, 250) };
         if result == WAIT_OBJECT_0 {
-            unsafe {
-                let _ = PostMessageW(Some(hwnd), WM_FILE_CHANGED, WPARAM(0), LPARAM(0));
+            let now = Instant::now();
+            if now.duration_since(last_notification) >= Duration::from_millis(200) {
+                unsafe {
+                    let _ = PostMessageW(Some(hwnd), WM_FILE_CHANGED, WPARAM(0), LPARAM(0));
+                }
+                last_notification = now;
             }
 
-            // Re-arm the notification
-            let ok = unsafe { FindNextChangeNotification(handle) };
-            if ok.is_err() {
+            if unsafe { FindNextChangeNotification(handle) }.is_err() {
                 break;
             }
+        } else if result != WAIT_TIMEOUT {
+            break;
         }
     }
 
     unsafe {
         let _ = FindCloseChangeNotification(handle);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn watcher_can_be_stopped_without_leaking() {
+        let dir = tempfile::tempdir().unwrap();
+        let watcher = start_watcher(dir.path().to_path_buf(), HWND::default());
+        watcher.stop();
     }
 }

@@ -7,8 +7,13 @@ use crate::image_loader::LoadedImage;
 
 pub struct Renderer {
     factory: ID2D1Factory,
+    dwrite_factory: windows::Win32::Graphics::DirectWrite::IDWriteFactory,
     render_target: Option<ID2D1HwndRenderTarget>,
     current_bitmap: Option<ID2D1Bitmap>,
+    checker_light: Option<ID2D1SolidColorBrush>,
+    checker_dark: Option<ID2D1SolidColorBrush>,
+    overlay_background: Option<ID2D1SolidColorBrush>,
+    overlay_text: Option<ID2D1SolidColorBrush>,
 }
 
 fn multiply_matrix3x2(
@@ -29,11 +34,19 @@ impl Renderer {
     pub fn new() -> Result<Self> {
         unsafe {
             let factory: ID2D1Factory = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)?;
+            let dwrite_factory = windows::Win32::Graphics::DirectWrite::DWriteCreateFactory(
+                windows::Win32::Graphics::DirectWrite::DWRITE_FACTORY_TYPE_SHARED,
+            )?;
 
             Ok(Self {
                 factory,
+                dwrite_factory,
                 render_target: None,
                 current_bitmap: None,
+                checker_light: None,
+                checker_dark: None,
+                overlay_background: None,
+                overlay_text: None,
             })
         }
     }
@@ -62,6 +75,42 @@ impl Renderer {
                 .factory
                 .CreateHwndRenderTarget(&render_props, &hwnd_props)?;
 
+            self.checker_light = Some(rt.CreateSolidColorBrush(
+                &D2D1_COLOR_F {
+                    r: 0.8,
+                    g: 0.8,
+                    b: 0.8,
+                    a: 1.0,
+                },
+                None,
+            )?);
+            self.checker_dark = Some(rt.CreateSolidColorBrush(
+                &D2D1_COLOR_F {
+                    r: 0.6,
+                    g: 0.6,
+                    b: 0.6,
+                    a: 1.0,
+                },
+                None,
+            )?);
+            self.overlay_background = Some(rt.CreateSolidColorBrush(
+                &D2D1_COLOR_F {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 0.7,
+                },
+                None,
+            )?);
+            self.overlay_text = Some(rt.CreateSolidColorBrush(
+                &D2D1_COLOR_F {
+                    r: 1.0,
+                    g: 1.0,
+                    b: 1.0,
+                    a: 1.0,
+                },
+                None,
+            )?);
             self.render_target = Some(rt);
             Ok(())
         }
@@ -74,6 +123,16 @@ impl Renderer {
             }
         }
         Ok(())
+    }
+
+    pub fn recreate_render_target(&mut self, hwnd: HWND, width: u32, height: u32) -> Result<()> {
+        self.render_target = None;
+        self.current_bitmap = None;
+        self.checker_light = None;
+        self.checker_dark = None;
+        self.overlay_background = None;
+        self.overlay_text = None;
+        self.create_render_target(hwnd, width, height)
     }
 
     pub fn load_bitmap(
@@ -209,24 +268,14 @@ impl Renderer {
 
     fn draw_checkerboard(&self, rt: &ID2D1HwndRenderTarget, rect: &D2D_RECT_F) -> Result<()> {
         unsafe {
-            let light = rt.CreateSolidColorBrush(
-                &D2D1_COLOR_F {
-                    r: 0.8,
-                    g: 0.8,
-                    b: 0.8,
-                    a: 1.0,
-                },
-                None,
-            )?;
-            let dark = rt.CreateSolidColorBrush(
-                &D2D1_COLOR_F {
-                    r: 0.6,
-                    g: 0.6,
-                    b: 0.6,
-                    a: 1.0,
-                },
-                None,
-            )?;
+            let light = self
+                .checker_light
+                .as_ref()
+                .ok_or_else(|| Error::new(E_FAIL, "Checkerboard resources are not initialized"))?;
+            let dark = self
+                .checker_dark
+                .as_ref()
+                .ok_or_else(|| Error::new(E_FAIL, "Checkerboard resources are not initialized"))?;
 
             let cell_size = 16.0f32;
             let mut col = 0u32;
@@ -242,7 +291,7 @@ impl Renderer {
                         right: (cx + cell_size).min(rect.right),
                         bottom: (cy + cell_size).min(rect.bottom),
                     };
-                    rt.FillRectangle(&cell, brush);
+                    rt.FillRectangle(&cell, *brush);
                     cy += cell_size;
                     row += 1;
                 }
@@ -262,35 +311,19 @@ impl Renderer {
         unsafe {
             let rt_size = rt.GetSize();
 
-            let bg_brush = rt.CreateSolidColorBrush(
-                &D2D1_COLOR_F {
-                    r: 0.0,
-                    g: 0.0,
-                    b: 0.0,
-                    a: 0.6,
-                },
-                None,
-            )?;
-
-            let text_brush = rt.CreateSolidColorBrush(
-                &D2D1_COLOR_F {
-                    r: 1.0,
-                    g: 1.0,
-                    b: 1.0,
-                    a: 1.0,
-                },
-                None,
-            )?;
-
-            let dwrite_factory: windows::Win32::Graphics::DirectWrite::IDWriteFactory =
-                windows::Win32::Graphics::DirectWrite::DWriteCreateFactory(
-                    windows::Win32::Graphics::DirectWrite::DWRITE_FACTORY_TYPE_SHARED,
-                )?;
+            let bg_brush = self
+                .overlay_background
+                .as_ref()
+                .ok_or_else(|| Error::new(E_FAIL, "Overlay resources are not initialized"))?;
+            let text_brush = self
+                .overlay_text
+                .as_ref()
+                .ok_or_else(|| Error::new(E_FAIL, "Overlay resources are not initialized"))?;
 
             let text_wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
             let font_name: Vec<u16> = "Consolas\0".encode_utf16().collect();
 
-            let text_format = dwrite_factory.CreateTextFormat(
+            let text_format = self.dwrite_factory.CreateTextFormat(
                 PCWSTR(font_name.as_ptr()),
                 None,
                 windows::Win32::Graphics::DirectWrite::DWRITE_FONT_WEIGHT_NORMAL,
@@ -309,7 +342,7 @@ impl Renderer {
                 right: rt_size.width,
                 bottom: rt_size.height,
             };
-            rt.FillRectangle(&bg_rect, &bg_brush);
+            rt.FillRectangle(&bg_rect, bg_brush);
 
             let text_rect = D2D_RECT_F {
                 left: 6.0,
@@ -321,7 +354,7 @@ impl Renderer {
                 &text_wide[..text_wide.len() - 1],
                 &text_format,
                 &text_rect,
-                &text_brush,
+                text_brush,
                 D2D1_DRAW_TEXT_OPTIONS_NONE,
                 windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL,
             );
@@ -337,33 +370,17 @@ impl Renderer {
         dpi_scale: f32,
     ) -> Result<()> {
         unsafe {
-            let bg_brush = rt.CreateSolidColorBrush(
-                &D2D1_COLOR_F {
-                    r: 0.0,
-                    g: 0.0,
-                    b: 0.0,
-                    a: 0.7,
-                },
-                None,
-            )?;
-
-            let text_brush = rt.CreateSolidColorBrush(
-                &D2D1_COLOR_F {
-                    r: 1.0,
-                    g: 1.0,
-                    b: 1.0,
-                    a: 1.0,
-                },
-                None,
-            )?;
-
-            let dwrite_factory: windows::Win32::Graphics::DirectWrite::IDWriteFactory =
-                windows::Win32::Graphics::DirectWrite::DWriteCreateFactory(
-                    windows::Win32::Graphics::DirectWrite::DWRITE_FACTORY_TYPE_SHARED,
-                )?;
+            let bg_brush = self
+                .overlay_background
+                .as_ref()
+                .ok_or_else(|| Error::new(E_FAIL, "Overlay resources are not initialized"))?;
+            let text_brush = self
+                .overlay_text
+                .as_ref()
+                .ok_or_else(|| Error::new(E_FAIL, "Overlay resources are not initialized"))?;
 
             let font_name: Vec<u16> = "Consolas\0".encode_utf16().collect();
-            let text_format = dwrite_factory.CreateTextFormat(
+            let text_format = self.dwrite_factory.CreateTextFormat(
                 PCWSTR(font_name.as_ptr()),
                 None,
                 windows::Win32::Graphics::DirectWrite::DWRITE_FONT_WEIGHT_NORMAL,
@@ -377,7 +394,7 @@ impl Renderer {
             let rt_size = rt.GetSize();
             let max_width = (rt_size.width * 0.5).max(300.0);
 
-            let text_layout = dwrite_factory.CreateTextLayout(
+            let text_layout = self.dwrite_factory.CreateTextLayout(
                 &text_wide[..text_wide.len() - 1],
                 &text_format,
                 max_width,
@@ -397,7 +414,7 @@ impl Renderer {
                 right: box_width,
                 bottom: box_height,
             };
-            rt.FillRectangle(&bg_rect, &bg_brush);
+            rt.FillRectangle(&bg_rect, bg_brush);
 
             let text_rect = D2D_RECT_F {
                 left: padding,
@@ -409,7 +426,7 @@ impl Renderer {
                 &text_wide[..text_wide.len() - 1],
                 &text_format,
                 &text_rect,
-                &text_brush,
+                text_brush,
                 D2D1_DRAW_TEXT_OPTIONS_NONE,
                 windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL,
             );
@@ -424,65 +441,5 @@ impl Renderer {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn multiply_identity() {
-        let id = windows_numerics::Matrix3x2::identity();
-        let result = multiply_matrix3x2(id, id);
-        assert_eq!(result.M11, 1.0);
-        assert_eq!(result.M12, 0.0);
-        assert_eq!(result.M21, 0.0);
-        assert_eq!(result.M22, 1.0);
-        assert_eq!(result.M31, 0.0);
-        assert_eq!(result.M32, 0.0);
-    }
-
-    #[test]
-    fn multiply_with_identity() {
-        let a = windows_numerics::Matrix3x2 {
-            M11: 2.0,
-            M12: 3.0,
-            M21: 4.0,
-            M22: 5.0,
-            M31: 6.0,
-            M32: 7.0,
-        };
-        let id = windows_numerics::Matrix3x2::identity();
-        let result = multiply_matrix3x2(a, id);
-        assert_eq!(result.M11, 2.0);
-        assert_eq!(result.M12, 3.0);
-        assert_eq!(result.M21, 4.0);
-        assert_eq!(result.M22, 5.0);
-        assert_eq!(result.M31, 6.0);
-        assert_eq!(result.M32, 7.0);
-    }
-
-    #[test]
-    fn multiply_known_values() {
-        let a = windows_numerics::Matrix3x2 {
-            M11: 1.0,
-            M12: 2.0,
-            M21: 3.0,
-            M22: 4.0,
-            M31: 5.0,
-            M32: 6.0,
-        };
-        let b = windows_numerics::Matrix3x2 {
-            M11: 7.0,
-            M12: 8.0,
-            M21: 9.0,
-            M22: 10.0,
-            M31: 11.0,
-            M32: 12.0,
-        };
-        let result = multiply_matrix3x2(a, b);
-        assert_eq!(result.M11, 25.0);
-        assert_eq!(result.M12, 28.0);
-        assert_eq!(result.M21, 57.0);
-        assert_eq!(result.M22, 64.0);
-        assert_eq!(result.M31, 100.0);
-        assert_eq!(result.M32, 112.0);
-    }
-}
+#[path = "renderer_tests.rs"]
+mod tests;

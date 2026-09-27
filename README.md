@@ -67,6 +67,7 @@ fehrust -t C:\Photos
 
 # Open each image in its own window
 fehrust --multiwindow *.jpg
+# Remote URLs open placeholder windows and load asynchronously.
 
 # List image info without opening a window
 fehrust -L C:\Photos
@@ -235,6 +236,7 @@ All keybindings are configurable with `--key-binding "key action"`.
 |------|-------------|
 | `-q`, `--quiet` | Suppress non-error output |
 | `--verbose` | Verbose output |
+| `--performance-metrics` | Log image loading, network, discovery, and rendering timings to stderr and append them to `perf.log` |
 
 ## Format Strings
 

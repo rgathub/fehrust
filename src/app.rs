@@ -5,19 +5,38 @@ use crate::config::{Options, ViewMode};
 use crate::exif;
 use crate::filelist::FileList;
 use crate::format::expand_format;
-use crate::image_loader::{ImageLoader, LoadedImage};
+use crate::image_loader::{DecodedImage, ImageLoader, LoadedImage};
 use crate::keybindings::{self, KeyMap};
 use crate::renderer::Renderer;
 use crate::thumbnail::ThumbnailView;
 use crate::transforms;
 use crate::window;
 
+use std::collections::VecDeque;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, Receiver};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, AtomicU64, Ordering},
+};
+use std::thread;
 
 const SLIDESHOW_TIMER_ID: usize = 1;
 const DEFAULT_WIDTH: u32 = 800;
 const DEFAULT_HEIGHT: u32 = 600;
+pub const WM_REMOTE_IMAGE: u32 = WM_USER + 2;
+pub const WM_IMAGE_LOADED: u32 = WM_USER + 3;
+pub const WM_FILE_DISCOVERED: u32 = WM_USER + 4;
+
+type ImageLoadMessage = (u64, PathBuf, Result<DecodedImage, String>);
+
+mod file_operations;
+mod loading;
+mod modes;
+mod navigation;
+mod rendering;
+pub use modes::run;
 
 fn slideshow_timer_ms(delay: Option<f64>) -> Option<u32> {
     let delay = delay?;
@@ -47,8 +66,9 @@ fn move_file(path: &Path, target: &Path) -> io::Result<()> {
 pub struct AppState {
     pub options: Options,
     pub filelist: FileList,
-    pub renderer: Renderer,
     pub image_loader: ImageLoader,
+    pub renderer: Renderer,
+    pub metrics: crate::metrics::PerformanceMetrics,
     pub current_image: Option<LoadedImage>,
     pub current_exif: Option<exif::ExifInfo>,
     pub hwnd: HWND,
@@ -82,7 +102,17 @@ pub struct AppState {
 
     // Thumbnail mode
     pub thumbnail_view: Option<ThumbnailView>,
-
+    image_load_tx: mpsc::Sender<ImageLoadMessage>,
+    image_load_rx: Receiver<ImageLoadMessage>,
+    load_cancel: Arc<AtomicU64>,
+    remote_image_tx: mpsc::Sender<Result<crate::filelist::FehFile, String>>,
+    remote_image_rx: Receiver<Result<crate::filelist::FehFile, String>>,
+    discovery_tx: mpsc::Sender<crate::filelist::FehFile>,
+    discovery_rx: Receiver<crate::filelist::FehFile>,
+    next_load_id: u64,
+    pub(crate) watcher: Option<crate::filewatcher::WatcherHandle>,
+    pub(crate) background_cancel: Arc<AtomicBool>,
+    pub(crate) worker_handles: Vec<thread::JoinHandle<()>>,
     window_width: u32,
     window_height: u32,
 }
@@ -91,14 +121,32 @@ impl AppState {
     pub fn new(options: Options) -> windows::core::Result<Self> {
         let renderer = Renderer::new()?;
         let image_loader = ImageLoader::new()?;
+        let metrics = crate::metrics::PerformanceMetrics::new(options.performance_metrics)
+            .map_err(|error| {
+                windows::core::Error::new(E_FAIL, format!("Cannot open perf.log: {error}"))
+            })?;
 
+        let has_remote_urls = options
+            .files
+            .iter()
+            .any(|path| crate::filelist::is_remote_url(path));
+        let file_list_started = std::time::Instant::now();
         let mut filelist = if let Some(ref fl_path) = options.filelist {
             FileList::from_filelist(Path::new(fl_path))
+        } else if has_remote_urls || options.recursive {
+            FileList::collect_local(&options.files, false)
         } else {
             FileList::collect(&options.files, options.recursive)
         };
+        metrics.log(
+            "file_list_collect",
+            file_list_started,
+            &format!("items={}", filelist.len()),
+        );
 
-        if filelist.is_empty() {
+        let has_recursive_directories =
+            options.recursive && options.files.iter().any(|path| Path::new(path).is_dir());
+        if filelist.is_empty() && !has_remote_urls && !has_recursive_directories {
             return Err(windows::core::Error::new(E_FAIL, "No image files found"));
         }
 
@@ -136,12 +184,18 @@ impl AppState {
 
         let keybindings = keybindings::build_keymap(&options.key_binding);
         let numbered_actions = options.numbered_actions();
+        let (image_load_tx, image_load_rx) = mpsc::channel();
+        let load_cancel = Arc::new(AtomicU64::new(0));
+        let (remote_image_tx, remote_image_rx) = mpsc::channel();
+        let (discovery_tx, discovery_rx) = mpsc::channel();
+        let background_cancel = Arc::new(AtomicBool::new(false));
 
         Ok(Self {
             options,
             filelist,
-            renderer,
             image_loader,
+            renderer,
+            metrics,
             current_image: None,
             current_exif: None,
             hwnd: HWND::default(),
@@ -162,401 +216,21 @@ impl AppState {
             keybindings,
             numbered_actions,
             thumbnail_view: None,
+            image_load_tx,
+            image_load_rx,
+            load_cancel,
+            remote_image_tx,
+            remote_image_rx,
+            discovery_tx,
+            discovery_rx,
+            next_load_id: 0,
+            watcher: None,
+            background_cancel,
+            worker_handles: Vec::new(),
             window_width: DEFAULT_WIDTH,
             window_height: DEFAULT_HEIGHT,
         })
     }
-
-    pub fn load_current_image(&mut self) {
-        self.pan_x = 0.0;
-        self.pan_y = 0.0;
-        self.rotation = 0.0;
-        self.flip_h = false;
-        self.flip_v = false;
-        self.current_exif = None;
-        self.current_caption = None;
-
-        if let Some(file) = self.filelist.current() {
-            let exif_info = exif::read_exif(&file.path);
-
-            // Load caption if caption_path is set
-            if let Some(ref caption_path) = self.options.caption_path
-                && let Some(stem) = file.path.file_stem()
-            {
-                let caption_file =
-                    Path::new(caption_path).join(format!("{}.txt", stem.to_string_lossy()));
-                if let Ok(text) = std::fs::read_to_string(&caption_file) {
-                    let trimmed = text.trim().to_string();
-                    if !trimmed.is_empty() {
-                        self.current_caption = Some(trimmed);
-                    }
-                }
-            }
-
-            match self.image_loader.load(&file.path) {
-                Ok(image) => {
-                    if let Err(e) = self
-                        .renderer
-                        .load_bitmap(&image, self.image_loader.wic_factory())
-                    {
-                        eprintln!("Failed to create bitmap: {e}");
-                    }
-                    self.current_image = Some(image);
-                    self.zoom_to_fit();
-
-                    // Apply EXIF auto-rotation
-                    if let Some(ref exif) = exif_info
-                        && exif.orientation != 1
-                    {
-                        let (rot, fh, fv) = exif::exif_orientation_to_rotation(exif.orientation);
-                        self.rotation = rot;
-                        self.flip_h = fh;
-                        self.flip_v = fv;
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Failed to load {}: {e}", file.path.display());
-                    self.current_image = None;
-                }
-            }
-
-            self.current_exif = exif_info;
-        }
-
-        self.update_title();
-    }
-
-    pub fn zoom_to_fit(&mut self) {
-        if let Some(ref img) = self.current_image
-            && self.window_width > 0
-            && self.window_height > 0
-        {
-            self.zoom = transforms::fit_zoom(
-                img.width as f64,
-                img.height as f64,
-                self.window_width as f64,
-                self.window_height as f64,
-            );
-            self.pan_x = 0.0;
-            self.pan_y = 0.0;
-        }
-    }
-
-    pub fn navigate_next(&mut self) {
-        self.filelist.next();
-        self.load_current_image();
-    }
-
-    pub fn navigate_prev(&mut self) {
-        self.filelist.prev();
-        self.load_current_image();
-    }
-
-    pub fn paint(&mut self) -> windows::core::Result<()> {
-        // Thumbnail / index mode rendering
-        if let Some(ref mut thumb_view) = self.thumbnail_view {
-            if let Some(rt) = self.renderer.render_target() {
-                return thumb_view.render(rt, &self.filelist, &self.image_loader);
-            }
-            return Ok(());
-        }
-
-        let filename = self
-            .filelist
-            .current()
-            .map(|f| f.path.to_string_lossy().into_owned())
-            .unwrap_or_default();
-
-        let info_text = if self.options.draw_info {
-            crate::overlay::build_info_string(self)
-        } else {
-            String::new()
-        };
-
-        self.renderer.render(
-            self.zoom,
-            self.pan_x,
-            self.pan_y,
-            self.rotation,
-            self.flip_h,
-            self.flip_v,
-            self.options.draw_filename,
-            &filename,
-            self.options.draw_info,
-            &info_text,
-            self.dpi_scale,
-        )
-    }
-
-    pub fn handle_resize(&mut self, width: u32, height: u32) -> windows::core::Result<()> {
-        self.window_width = width;
-        self.window_height = height;
-        self.renderer.resize(width, height)?;
-
-        // Re-fit image on resize if we're at fit-to-window zoom
-        if self.options.scale_down {
-            self.zoom_to_fit();
-        }
-
-        Ok(())
-    }
-
-    pub fn handle_timer(&mut self) {
-        if !self.paused && self.filelist.len() > 1 {
-            let at_last = self.filelist.current_index() == self.filelist.len() - 1;
-            if at_last {
-                match self.options.on_last_slide_action() {
-                    crate::config::OnLastSlide::Quit => {
-                        if self.hwnd != HWND::default() {
-                            unsafe {
-                                let _ = DestroyWindow(self.hwnd);
-                            }
-                        }
-                        return;
-                    }
-                    crate::config::OnLastSlide::Hold => {
-                        self.paused = true;
-                        return;
-                    }
-                    crate::config::OnLastSlide::Resume => {}
-                }
-            }
-            self.navigate_next();
-        }
-    }
-
-    fn reset_slideshow_timer(&self, hwnd: HWND) {
-        if let Some(ms) = slideshow_timer_ms(self.options.slideshow_delay) {
-            unsafe {
-                SetTimer(Some(hwnd), SLIDESHOW_TIMER_ID, ms, None);
-            }
-        }
-    }
-
-    pub fn remove_current_from_list(&mut self, hwnd: HWND) {
-        if !self.filelist.remove_current() {
-            // List is empty, quit
-            unsafe {
-                let _ = DestroyWindow(hwnd);
-            }
-            return;
-        }
-        self.load_current_image();
-        self.reset_slideshow_timer(hwnd);
-        window::invalidate(hwnd);
-    }
-
-    pub fn delete_current_from_disk(&mut self, hwnd: HWND) {
-        let Some(path) = self.filelist.current().map(|file| file.path.clone()) else {
-            return;
-        };
-
-        self.current_image = None;
-        self.renderer.clear_bitmap();
-
-        match std::fs::remove_file(&path) {
-            Ok(()) => {
-                eprintln!("Deleted: {}", path.display());
-                if !self.filelist.remove_current() {
-                    unsafe {
-                        let _ = DestroyWindow(hwnd);
-                    }
-                    return;
-                }
-                self.load_current_image();
-                self.reset_slideshow_timer(hwnd);
-                window::invalidate(hwnd);
-            }
-            Err(e) => {
-                eprintln!("Failed to delete {}: {e}", path.display());
-                self.load_current_image();
-                window::invalidate(hwnd);
-            }
-        }
-    }
-
-    pub fn move_current_to_directory(&mut self, hwnd: HWND) {
-        let Some(destination) = self.options.move_to.as_deref() else {
-            eprintln!("Move failed: specify a destination with --move DIRECTORY");
-            return;
-        };
-        let destination = Path::new(destination);
-        if let Err(e) = std::fs::create_dir_all(destination) {
-            eprintln!(
-                "Move failed: could not create destination directory {}: {e}",
-                destination.display()
-            );
-            return;
-        }
-
-        let Some(path) = self.filelist.current().map(|file| file.path.clone()) else {
-            return;
-        };
-        let Some(file_name) = path.file_name() else {
-            eprintln!("Move failed: current image has no file name");
-            return;
-        };
-        let target = destination.join(file_name);
-        if target == path {
-            eprintln!("Move skipped: destination is the current image directory");
-            return;
-        }
-
-        self.current_image = None;
-        self.renderer.clear_bitmap();
-
-        match move_file(&path, &target) {
-            Ok(()) => {
-                eprintln!("Moved {} to {}", path.display(), target.display());
-                if !self.filelist.remove_current() {
-                    unsafe {
-                        let _ = DestroyWindow(hwnd);
-                    }
-                    return;
-                }
-                self.load_current_image();
-                self.reset_slideshow_timer(hwnd);
-                window::invalidate(hwnd);
-            }
-            Err(e) => {
-                eprintln!(
-                    "Failed to move {} to {}: {e}",
-                    path.display(),
-                    target.display()
-                );
-                self.load_current_image();
-                window::invalidate(hwnd);
-            }
-        }
-    }
-
-    pub fn update_title(&self) {
-        if self.hwnd == HWND::default() {
-            return;
-        }
-
-        let (img_w, img_h) = self
-            .current_image
-            .as_ref()
-            .map(|i| (Some(i.width), Some(i.height)))
-            .unwrap_or((None, None));
-
-        let title = expand_format(
-            &self.options.title,
-            self.filelist.current(),
-            self.filelist.current_index(),
-            self.filelist.len(),
-            self.zoom,
-            img_w,
-            img_h,
-            self.paused,
-        );
-
-        window::update_title(self.hwnd, &title);
-    }
-}
-
-pub fn run(options: Options) -> windows::core::Result<()> {
-    // --- Early exit modes (no window needed) ---
-
-    // List mode: print file info to stdout
-    if options.list || options.customlist.is_some() {
-        return run_list_mode(&options);
-    }
-
-    // Loadable/unloadable filter mode
-    if options.loadable || options.unloadable {
-        return run_filter_mode(&options);
-    }
-
-    // Multi-window mode
-    if options.multiwindow {
-        return run_multiwindow(options);
-    }
-
-    // Set DPI awareness before creating any windows
-    window::set_dpi_awareness();
-
-    let fullscreen = options.fullscreen;
-    let borderless = options.borderless;
-    let scale_down = options.scale_down;
-    let slideshow_delay = options.slideshow_delay;
-    let auto_reload = options.auto_reload;
-    let thumb_mode = options.thumbnails;
-    let index_mode = options.index;
-
-    let (init_w, init_h) = options
-        .parse_geometry()
-        .map(|(w, h, _, _)| (w, h))
-        .unwrap_or((DEFAULT_WIDTH, DEFAULT_HEIGHT));
-
-    let mut state = AppState::new(options)?;
-
-    // Enter thumbnail/index mode if requested
-    if thumb_mode || index_mode {
-        state.thumbnail_view = Some(ThumbnailView::new(index_mode));
-    }
-
-    let hwnd = window::create_window("fehrust", init_w, init_h, borderless, fullscreen)?;
-
-    state.hwnd = hwnd;
-
-    // Get actual client size
-    let mut rect = RECT::default();
-    unsafe {
-        let _ = GetClientRect(hwnd, &mut rect);
-    }
-    let client_w = (rect.right - rect.left) as u32;
-    let client_h = (rect.bottom - rect.top) as u32;
-
-    state.window_width = if client_w > 0 { client_w } else { init_w };
-    state.window_height = if client_h > 0 { client_h } else { init_h };
-
-    state
-        .renderer
-        .create_render_target(hwnd, state.window_width, state.window_height)?;
-
-    // Load first image (skip in thumbnail/index mode — thumbnails are loaded lazily)
-    if state.thumbnail_view.is_none() {
-        state.load_current_image();
-
-        if scale_down {
-            state.zoom_to_fit();
-        }
-    }
-
-    // Set up slideshow timer
-    if let Some(ms) = slideshow_timer_ms(slideshow_delay) {
-        unsafe {
-            SetTimer(Some(hwnd), SLIDESHOW_TIMER_ID, ms, None);
-        }
-    }
-
-    // Store state pointer for WndProc
-    window::set_app_state(hwnd, &mut state as *mut AppState);
-
-    // Initial paint
-    window::invalidate(hwnd);
-
-    // Start file watcher if --auto-reload is set
-    if auto_reload
-        && let Some(file) = state.filelist.current()
-        && let Some(parent) = file.path.parent()
-    {
-        crate::filewatcher::start_watcher(parent.to_path_buf(), hwnd);
-    }
-
-    // Enter message loop
-    window::run_message_loop();
-
-    // Clean up timer
-    if slideshow_delay.is_some() {
-        unsafe {
-            let _ = KillTimer(Some(hwnd), SLIDESHOW_TIMER_ID);
-        }
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -649,25 +323,73 @@ pub fn run_multiwindow(options: Options) -> windows::core::Result<()> {
         .map(|(w, h, _, _)| (w, h))
         .unwrap_or((DEFAULT_WIDTH, DEFAULT_HEIGHT));
 
-    let filelist = build_filelist(&options);
-    if filelist.is_empty() {
+    let file_list_started = std::time::Instant::now();
+    let local_filelist = if let Some(ref fl_path) = options.filelist {
+        FileList::from_filelist(Path::new(fl_path))
+    } else {
+        FileList::collect_local(&options.files, options.recursive)
+    };
+    let initial_item_count = local_filelist.len();
+    let remote_urls: Vec<String> = options
+        .files
+        .iter()
+        .filter(|path| crate::filelist::is_remote_url(path))
+        .cloned()
+        .collect();
+    if local_filelist.is_empty() && remote_urls.is_empty() {
         return Err(windows::core::Error::new(E_FAIL, "No image files found"));
     }
 
     // Create one AppState per window, each with a single-file filelist.
     let mut states: Vec<AppState> = Vec::new();
 
-    for file in filelist.files() {
-        let single_list = FileList::from_single(file.clone());
+    let metrics =
+        crate::metrics::PerformanceMetrics::new(options.performance_metrics).map_err(|error| {
+            windows::core::Error::new(E_FAIL, format!("Cannot open perf.log: {error}"))
+        })?;
+    metrics.log(
+        "file_list_collect",
+        file_list_started,
+        &format!("items={initial_item_count}"),
+    );
+
+    let mut window_inputs: Vec<(Option<crate::filelist::FehFile>, Option<String>)> = local_filelist
+        .files()
+        .iter()
+        .cloned()
+        .map(|file| (Some(file), None))
+        .collect();
+    window_inputs.extend(remote_urls.into_iter().map(|url| (None, Some(url))));
+
+    for (file, remote_url) in window_inputs {
+        let single_list = file
+            .clone()
+            .map(FileList::from_single)
+            .unwrap_or_else(FileList::empty);
         let mut single_opts = options.clone();
         single_opts.multiwindow = false;
+        single_opts.recursive = false;
+        single_opts.files = file
+            .as_ref()
+            .map(|file| vec![file.path.to_string_lossy().into_owned()])
+            .or_else(|| remote_url.clone().map(|url| vec![url]))
+            .unwrap_or_default();
 
         let renderer = Renderer::new()?;
         let image_loader = ImageLoader::new()?;
+        let state_metrics = metrics.clone();
         let keybindings = keybindings::build_keymap(&single_opts.key_binding);
         let numbered_actions = single_opts.numbered_actions();
-
-        let title = file.name.clone();
+        let (image_load_tx, image_load_rx) = mpsc::channel();
+        let load_cancel = Arc::new(AtomicU64::new(0));
+        let (remote_image_tx, remote_image_rx) = mpsc::channel();
+        let (discovery_tx, discovery_rx) = mpsc::channel();
+        let background_cancel = Arc::new(AtomicBool::new(false));
+        let title = file
+            .as_ref()
+            .map(|file| file.name.clone())
+            .or_else(|| remote_url.clone())
+            .unwrap_or_else(|| "fehrust".to_string());
         let hwnd = window::create_window(
             &title,
             init_w,
@@ -680,6 +402,7 @@ pub fn run_multiwindow(options: Options) -> windows::core::Result<()> {
             options: single_opts,
             filelist: single_list,
             renderer,
+            metrics: state_metrics,
             image_loader,
             current_image: None,
             current_exif: None,
@@ -701,6 +424,17 @@ pub fn run_multiwindow(options: Options) -> windows::core::Result<()> {
             keybindings,
             numbered_actions,
             thumbnail_view: None,
+            image_load_tx,
+            image_load_rx,
+            load_cancel,
+            remote_image_tx,
+            remote_image_rx,
+            discovery_tx,
+            discovery_rx,
+            next_load_id: 0,
+            watcher: None,
+            background_cancel,
+            worker_handles: Vec::new(),
             window_width: init_w,
             window_height: init_h,
         };
@@ -717,9 +451,11 @@ pub fn run_multiwindow(options: Options) -> windows::core::Result<()> {
         state
             .renderer
             .create_render_target(hwnd, state.window_width, state.window_height)?;
-        state.load_current_image();
-        if state.options.scale_down {
-            state.zoom_to_fit();
+        if state.filelist.current().is_some() {
+            state.load_current_image();
+            if state.options.scale_down {
+                state.zoom_to_fit();
+            }
         }
 
         states.push(state);
@@ -727,6 +463,10 @@ pub fn run_multiwindow(options: Options) -> windows::core::Result<()> {
 
     for state in &mut states {
         window::set_app_state(state.hwnd, state as *mut AppState);
+    }
+
+    for state in &mut states {
+        state.start_background_tasks(state.hwnd);
     }
 
     for state in &states {

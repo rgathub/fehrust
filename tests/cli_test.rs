@@ -12,7 +12,8 @@ fn help_flag_exits_success() {
         .assert()
         .success()
         .stdout(contains("fehrust"))
-        .stdout(contains("image viewer"));
+        .stdout(contains("image viewer"))
+        .stdout(contains("--performance-metrics"));
 }
 
 #[test]
