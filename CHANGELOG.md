@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+- Added MIT license text and open-source project policies.
+- Added contributor, security, and code-of-conduct documentation.
+- Added Dependabot updates and a scheduled Cargo dependency audit.
+
 ## [0.2.0] - 2026-09-24
 
 ### Added

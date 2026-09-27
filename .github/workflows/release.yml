@@ -47,7 +47,7 @@ jobs:
           Copy-Item target/release/fehrust.exe $dir/
           Copy-Item README.md $dir/
           Copy-Item CHANGELOG.md $dir/
-          Copy-Item LICENSE* $dir/ -ErrorAction SilentlyContinue
+          Copy-Item LICENSE $dir/
           Compress-Archive -Path $dir -DestinationPath "${dir}.zip"
           Push-Location installer
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `

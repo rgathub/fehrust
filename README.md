@@ -34,7 +34,12 @@ updated `PATH` to take effect.
 ## Requirements
 
 - Windows with the Windows Imaging Component (WIC) codecs needed for the image formats you want to open
-- Rust stable toolchain (edition 2024)
+- Windows x86_64 for the released binaries
+- Rust stable toolchain 1.85 or newer (edition 2024) for building from source
+
+fehrust currently supports Windows only. The release workflow targets
+`windows-latest` and produces x86_64 binaries; other architectures and
+operating systems are not supported.
 
 ## Usage
 
@@ -302,15 +307,24 @@ cargo clippy -- -D warnings
 # Run the complete test suite
 cargo test
 
+# Generate a local coverage summary (requires cargo-llvm-cov)
+cargo llvm-cov --all-features --workspace --summary-only
+
 # Build the optimized executable
 cargo build --release
 ```
 
-The CLI tests cover help, version, list, `--customlist`, and loadable modes. The image-loader integration tests validate Windows fixture handling and are run with:
+The CLI tests cover help, version, list, and `--customlist` modes. The
+Windows-only integration tests exercise the CLI `--loadable` path with a small
+fixture and verify fixture handling. They are run with:
 
 ```powershell
 cargo test --test image_loader_test
 ```
+
+CI also generates and uploads an LCOV coverage artifact on every push and
+pull request. Install `cargo-llvm-cov` with
+`cargo install cargo-llvm-cov` to reproduce the coverage summary locally.
 
 ## Compared to feh
 
@@ -334,15 +348,18 @@ fehrust is a Windows-native reimplementation of feh's core functionality. Key di
 - `~/.fehbg` script (Windows wallpaper is persistent natively)
 - Raw terminal/stdin control
 
-## License
+## License and project policies
 
-MIT
+fehrust is licensed under the [MIT License](LICENSE). See
+[CONTRIBUTING.md](CONTRIBUTING.md) for development and pull request guidance,
+[SECURITY.md](SECURITY.md) for vulnerability reports, and
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community expectations.
 
 ## Release Process
 
 Releases are Windows x86_64 GitHub Releases created by `.github/workflows/release.yml`.
 
-1. Choose the next semantic version, such as `0.2.1`.
+1. Choose the next semantic version, such as `0.2.2`.
 2. Update the `version` field in `Cargo.toml`.
 3. Run `cargo check` so `Cargo.lock` records the new package version.
 4. Run the formatting, lint, build, and test commands from [Development and Testing](#development-and-testing).
@@ -350,15 +367,15 @@ Releases are Windows x86_64 GitHub Releases created by `.github/workflows/releas
 
    ```powershell
    git add Cargo.toml Cargo.lock
-   git commit -m "Release v0.2.1"
+   git commit -m "Release v0.2.2"
    git push origin main
    ```
 
 6. Create and push an annotated `v*` tag:
 
    ```powershell
-   git tag -a v0.2.1 -m "Release v0.2.1"
-   git push origin v0.2.1
+   git tag -a v0.2.2 -m "Release v0.2.2"
+   git push origin v0.2.2
    ```
 
-Pushing the tag starts the Windows release workflow. It builds and tests the project, packages `fehrust.exe`, `README.md`, `CHANGELOG.md`, and any license files into a versioned Windows ZIP, creates and validates the Inno Setup installer, and publishes both artifacts in a GitHub Release with generated release notes.
+Pushing the tag starts the Windows release workflow. It builds and tests the project, packages `fehrust.exe`, `README.md`, `CHANGELOG.md`, and `LICENSE` into a versioned Windows ZIP, creates and validates the Inno Setup installer, and publishes both artifacts in a GitHub Release with generated release notes.

@@ -218,7 +218,9 @@ These require a Windows machine. Place in `tests/` directory.
 | get_dimensions | get_dimensions on PNG → correct w,h |
 | save_roundtrip | load PNG → save as PNG → reload → same dimensions |
 
-> Requires test fixture images in `tests/fixtures/`. Generate them programmatically or commit small ones (~100 bytes each).
+> The current suite exercises the image-loader path through the CLI
+> `--loadable` mode and checks the bundled PNG fixture. Direct WIC API tests,
+> format round-trips, and additional image fixtures remain future coverage.
 
 ### 3B: tests/renderer_test.rs
 
