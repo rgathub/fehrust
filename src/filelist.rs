@@ -56,6 +56,13 @@ fn is_image_file(path: &Path) -> bool {
 }
 
 impl FileList {
+    pub fn empty() -> Self {
+        Self {
+            files: Vec::new(),
+            current: 0,
+        }
+    }
+
     /// Create a FileList from a single file
     pub fn from_single(file: FehFile) -> Self {
         Self {

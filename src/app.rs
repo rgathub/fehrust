@@ -121,12 +121,16 @@ impl AppState {
     pub fn new(options: Options) -> windows::core::Result<Self> {
         let renderer = Renderer::new()?;
         let image_loader = ImageLoader::new()?;
-        let metrics = crate::metrics::PerformanceMetrics::new(options.performance_metrics);
+        let metrics = crate::metrics::PerformanceMetrics::new(options.performance_metrics)
+            .map_err(|error| {
+                windows::core::Error::new(E_FAIL, format!("Cannot open perf.log: {error}"))
+            })?;
 
         let has_remote_urls = options
             .files
             .iter()
             .any(|path| crate::filelist::is_remote_url(path));
+        let file_list_started = std::time::Instant::now();
         let mut filelist = if let Some(ref fl_path) = options.filelist {
             FileList::from_filelist(Path::new(fl_path))
         } else if has_remote_urls || options.recursive {
@@ -134,6 +138,11 @@ impl AppState {
         } else {
             FileList::collect(&options.files, options.recursive)
         };
+        metrics.log(
+            "file_list_collect",
+            file_list_started,
+            &format!("items={}", filelist.len()),
+        );
 
         let has_recursive_directories =
             options.recursive && options.files.iter().any(|path| Path::new(path).is_dir());
@@ -314,21 +323,61 @@ pub fn run_multiwindow(options: Options) -> windows::core::Result<()> {
         .map(|(w, h, _, _)| (w, h))
         .unwrap_or((DEFAULT_WIDTH, DEFAULT_HEIGHT));
 
-    let filelist = build_filelist(&options);
-    if filelist.is_empty() {
+    let file_list_started = std::time::Instant::now();
+    let local_filelist = if let Some(ref fl_path) = options.filelist {
+        FileList::from_filelist(Path::new(fl_path))
+    } else {
+        FileList::collect_local(&options.files, options.recursive)
+    };
+    let initial_item_count = local_filelist.len();
+    let remote_urls: Vec<String> = options
+        .files
+        .iter()
+        .filter(|path| crate::filelist::is_remote_url(path))
+        .cloned()
+        .collect();
+    if local_filelist.is_empty() && remote_urls.is_empty() {
         return Err(windows::core::Error::new(E_FAIL, "No image files found"));
     }
 
     // Create one AppState per window, each with a single-file filelist.
     let mut states: Vec<AppState> = Vec::new();
 
-    for file in filelist.files() {
-        let single_list = FileList::from_single(file.clone());
+    let metrics =
+        crate::metrics::PerformanceMetrics::new(options.performance_metrics).map_err(|error| {
+            windows::core::Error::new(E_FAIL, format!("Cannot open perf.log: {error}"))
+        })?;
+    metrics.log(
+        "file_list_collect",
+        file_list_started,
+        &format!("items={initial_item_count}"),
+    );
+
+    let mut window_inputs: Vec<(Option<crate::filelist::FehFile>, Option<String>)> = local_filelist
+        .files()
+        .iter()
+        .cloned()
+        .map(|file| (Some(file), None))
+        .collect();
+    window_inputs.extend(remote_urls.into_iter().map(|url| (None, Some(url))));
+
+    for (file, remote_url) in window_inputs {
+        let single_list = file
+            .clone()
+            .map(FileList::from_single)
+            .unwrap_or_else(FileList::empty);
         let mut single_opts = options.clone();
         single_opts.multiwindow = false;
+        single_opts.recursive = false;
+        single_opts.files = file
+            .as_ref()
+            .map(|file| vec![file.path.to_string_lossy().into_owned()])
+            .or_else(|| remote_url.clone().map(|url| vec![url]))
+            .unwrap_or_default();
 
         let renderer = Renderer::new()?;
         let image_loader = ImageLoader::new()?;
+        let state_metrics = metrics.clone();
         let keybindings = keybindings::build_keymap(&single_opts.key_binding);
         let numbered_actions = single_opts.numbered_actions();
         let (image_load_tx, image_load_rx) = mpsc::channel();
@@ -336,9 +385,11 @@ pub fn run_multiwindow(options: Options) -> windows::core::Result<()> {
         let (remote_image_tx, remote_image_rx) = mpsc::channel();
         let (discovery_tx, discovery_rx) = mpsc::channel();
         let background_cancel = Arc::new(AtomicBool::new(false));
-        let metrics = crate::metrics::PerformanceMetrics::new(options.performance_metrics);
-
-        let title = file.name.clone();
+        let title = file
+            .as_ref()
+            .map(|file| file.name.clone())
+            .or_else(|| remote_url.clone())
+            .unwrap_or_else(|| "fehrust".to_string());
         let hwnd = window::create_window(
             &title,
             init_w,
@@ -351,7 +402,7 @@ pub fn run_multiwindow(options: Options) -> windows::core::Result<()> {
             options: single_opts,
             filelist: single_list,
             renderer,
-            metrics,
+            metrics: state_metrics,
             image_loader,
             current_image: None,
             current_exif: None,
@@ -400,9 +451,11 @@ pub fn run_multiwindow(options: Options) -> windows::core::Result<()> {
         state
             .renderer
             .create_render_target(hwnd, state.window_width, state.window_height)?;
-        state.load_current_image();
-        if state.options.scale_down {
-            state.zoom_to_fit();
+        if state.filelist.current().is_some() {
+            state.load_current_image();
+            if state.options.scale_down {
+                state.zoom_to_fit();
+            }
         }
 
         states.push(state);
@@ -410,6 +463,10 @@ pub fn run_multiwindow(options: Options) -> windows::core::Result<()> {
 
     for state in &mut states {
         window::set_app_state(state.hwnd, state as *mut AppState);
+    }
+
+    for state in &mut states {
+        state.start_background_tasks(state.hwnd);
     }
 
     for state in &states {
