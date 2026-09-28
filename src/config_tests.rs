@@ -16,6 +16,12 @@ fn performance_metrics_flag_is_parsed() {
     assert!(opts.performance_metrics);
 }
 
+#[test]
+fn info_command() {
+    let opts = Options::parse_from(["fehrust", "--info", "echo %u", "test.jpg"]);
+    assert_eq!(opts.info.as_deref(), Some("echo %u"));
+}
+
 // --- on_last_slide_action ---
 
 #[test]

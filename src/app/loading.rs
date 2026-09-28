@@ -9,9 +9,10 @@ impl AppState {
         self.flip_v = false;
         self.renderer.clear_bitmap();
         self.current_exif = None;
+        self.current_info = None;
         self.current_caption = None;
 
-        if let Some(file) = self.filelist.current() {
+        if let Some(file) = self.filelist.current().cloned() {
             let exif_info = exif::read_exif(&file.path);
 
             // Load caption if caption_path is set
@@ -106,6 +107,8 @@ impl AppState {
                     {
                         eprintln!("Failed to create bitmap: {e}");
                     }
+                    let image_width = image.width;
+                    let image_height = image.height;
                     self.current_image = Some(image);
                     self.zoom_to_fit();
 
@@ -116,6 +119,22 @@ impl AppState {
                         self.rotation = rot;
                         self.flip_h = fh;
                         self.flip_v = fv;
+                    }
+
+                    if let Some(command) = self.options.info.as_deref()
+                        && let Some(file) = self.filelist.current().cloned()
+                    {
+                        match actions::execute_info_command(
+                            command,
+                            &file,
+                            self.filelist.current_index(),
+                            self.filelist.len(),
+                            Some(image_width),
+                            Some(image_height),
+                        ) {
+                            Ok(info) => self.current_info = Some(info),
+                            Err(error) => eprintln!("fehrust: {error}"),
+                        }
                     }
                 }
                 Err(error) => {

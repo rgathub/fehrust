@@ -255,7 +255,7 @@ impl Renderer {
                 self.draw_text_overlay(rt, filename, dpi_scale)?;
             }
 
-            // Draw info overlay (top-left box)
+            // Draw info overlay (bottom-left text)
             if draw_info && !info_text.is_empty() {
                 self.draw_info_overlay(rt, info_text, dpi_scale)?;
             }
@@ -370,10 +370,6 @@ impl Renderer {
         dpi_scale: f32,
     ) -> Result<()> {
         unsafe {
-            let bg_brush = self
-                .overlay_background
-                .as_ref()
-                .ok_or_else(|| Error::new(E_FAIL, "Overlay resources are not initialized"))?;
             let text_brush = self
                 .overlay_text
                 .as_ref()
@@ -407,20 +403,13 @@ impl Renderer {
             let padding = 8.0f32;
             let box_width = metrics.width + padding * 2.0;
             let box_height = metrics.height + padding * 2.0;
-
-            let bg_rect = D2D_RECT_F {
-                left: 0.0,
-                top: 0.0,
-                right: box_width,
-                bottom: box_height,
-            };
-            rt.FillRectangle(&bg_rect, bg_brush);
+            let box_top = (rt.GetSize().height - box_height).max(0.0);
 
             let text_rect = D2D_RECT_F {
                 left: padding,
-                top: padding,
+                top: box_top + padding,
                 right: box_width - padding,
-                bottom: box_height,
+                bottom: box_top + box_height,
             };
             rt.DrawText(
                 &text_wide[..text_wide.len() - 1],

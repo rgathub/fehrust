@@ -1,6 +1,7 @@
 use windows::Win32::Foundation::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
+use crate::actions;
 use crate::config::{Options, ViewMode};
 use crate::exif;
 use crate::filelist::FileList;
@@ -71,6 +72,7 @@ pub struct AppState {
     pub metrics: crate::metrics::PerformanceMetrics,
     pub current_image: Option<LoadedImage>,
     pub current_exif: Option<exif::ExifInfo>,
+    pub current_info: Option<String>,
     pub hwnd: HWND,
 
     pub zoom: f64,
@@ -201,6 +203,7 @@ impl AppState {
             metrics,
             current_image: None,
             current_exif: None,
+            current_info: None,
             hwnd: HWND::default(),
             zoom: 1.0,
             pan_x: 0.0,
@@ -412,6 +415,7 @@ pub fn run_multiwindow(options: Options) -> windows::core::Result<()> {
             image_loader,
             current_image: None,
             current_exif: None,
+            current_info: None,
             hwnd,
             zoom: 1.0,
             pan_x: 0.0,

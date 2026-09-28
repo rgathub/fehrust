@@ -46,7 +46,9 @@ impl AppState {
             .map(|f| f.path.to_string_lossy().into_owned())
             .unwrap_or_default();
 
-        let info_text = if self.options.draw_info {
+        let info_text = if let Some(ref info) = self.current_info {
+            info.clone()
+        } else if self.options.draw_info {
             crate::overlay::build_info_string(self)
         } else {
             String::new()
@@ -61,7 +63,7 @@ impl AppState {
             self.flip_v,
             self.options.draw_filename,
             &filename,
-            self.options.draw_info,
+            self.options.draw_info || self.options.info.is_some(),
             &info_text,
             self.dpi_scale,
         );

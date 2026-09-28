@@ -30,7 +30,7 @@ pub fn expand_format(
     while let Some(c) = chars.next() {
         if c == '%' {
             match chars.next() {
-                Some('f') => {
+                Some('f' | 'F') => {
                     if let Some(f) = file {
                         result.push_str(&f.path.to_string_lossy());
                     }
@@ -120,6 +120,13 @@ mod tests {
     fn expand_f() {
         let f = test_file();
         let result = expand_format("%f", Some(&f), 0, 1, 1.0, None, None, false);
+        assert_eq!(result, "C:\\images\\photo.jpg");
+    }
+
+    #[test]
+    fn expand_uppercase_f() {
+        let f = test_file();
+        let result = expand_format("%F", Some(&f), 0, 1, 1.0, None, None, false);
         assert_eq!(result, "C:\\images\\photo.jpg");
     }
 

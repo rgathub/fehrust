@@ -136,7 +136,7 @@ fehrust -F -D 10 'C:\Photos'
 | Key | Action |
 |-----|--------|
 | `d` | Toggle filename overlay |
-| `i` | Toggle info overlay (EXIF, dimensions, etc.) |
+| `i` | Toggle info overlay (EXIF, dimensions, etc.; bottom-left, transparent) |
 | `x` / `F11` | Toggle fullscreen |
 
 ### Modes
@@ -184,7 +184,8 @@ All keybindings are configurable with `--key-binding "key action"`.
 | `-g`, `--geometry WxH+X+Y` | Set window size and position |
 | `-x`, `--borderless` | Borderless window |
 | `-d`, `--draw-filename` | Show filename overlay |
-| `--draw-info` | Show info overlay on start |
+| `--draw-info` | Show the built-in info overlay on start (bottom-left with a transparent background) |
+| `--info COMMAND` | Run `COMMAND` for each image and show its output in the bottom-left info overlay |
 | `-Y`, `--hide-pointer` | Hide mouse cursor |
 | `--zoom LEVEL` | Default zoom (percent, "max", or "fill") |
 | `-^`, `--title FORMAT` | Window title format string |
@@ -240,12 +241,13 @@ All keybindings are configurable with `--key-binding "key action"`.
 
 ## Format Strings
 
-`--title`, `--list-format`, and `--customlist` support these format
-specifiers:
+`--title`, `--list-format`, `--customlist`, `--action`, and `--info` support
+these format specifiers:
 
 | Specifier | Expands to |
 |-----------|------------|
 | `%f` | Full file path |
+| `%F` | Full file path (alias for `%f`) |
 | `%n` | File name only |
 | `%u` | Current index (1-based) |
 | `%l` | Total file count |
@@ -258,6 +260,15 @@ specifiers:
 
 Custom actions use a smaller expansion set: `%f` (full path), `%n` (file
 name), `%u` (1-based index), `%l` (total count), and `%%` (literal percent).
+
+For a custom info command, place `--info` before the image paths. The `--` argument
+terminates option parsing and must not precede `--info`:
+
+```powershell
+.\fehrust.exe -rqzFY -D 60 --move '\\unraid7.local\media\Models\ComfyUI\moved' `
+  --info 'echo %u %w %h %l %F' `
+  '\\unraid7.local\media\Models\ComfyUI\output'
+```
 
 ## Architecture
 

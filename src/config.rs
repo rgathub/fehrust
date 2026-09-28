@@ -68,7 +68,11 @@ pub struct Options {
     #[arg(short = 'x', long)]
     pub borderless: bool,
 
-    /// Display info overlay
+    /// Execute a command to provide the info overlay
+    #[arg(long, value_name = "COMMAND")]
+    pub info: Option<String>,
+
+    /// Display the built-in info overlay
     #[arg(long)]
     pub draw_info: bool,
 

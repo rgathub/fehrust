@@ -1,8 +1,9 @@
 use crate::filelist::FehFile;
+use crate::format::expand_format;
 
 /// Execute a custom action command, expanding format specifiers.
 ///
-/// Specifiers: %f=filepath, %n=filename, %u=index (1-based), %l=total
+/// Specifiers: %f/%F=filepath, %n=filename, %u=index (1-based), %l=total
 pub fn execute_action(action_str: &str, file: &FehFile, index: usize, total: usize) {
     let expanded = expand_action(action_str, file, index, total);
     let parts: Vec<&str> = expanded.split_whitespace().collect();
@@ -26,6 +27,30 @@ pub fn execute_action(action_str: &str, file: &FehFile, index: usize, total: usi
             }
         },
     );
+}
+
+/// Execute a custom info command and return its output for the current image.
+pub fn execute_info_command(
+    command: &str,
+    file: &FehFile,
+    index: usize,
+    total: usize,
+    width: Option<u32>,
+    height: Option<u32>,
+) -> Result<String, String> {
+    let expanded = expand_format(command, Some(file), index, total, 1.0, width, height, false);
+    let output = std::process::Command::new("cmd")
+        .args(["/C", &expanded])
+        .output()
+        .map_err(|e| format!("failed to execute info command: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!("info command exited with status {}", output.status));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .trim_end_matches(['\r', '\n'])
+        .to_string())
 }
 
 fn expand_action(action_str: &str, file: &FehFile, index: usize, total: usize) -> String {
@@ -103,5 +128,16 @@ mod tests {
         let f = test_file();
         let result = expand_action("cp %f /dest/%n", &f, 0, 1);
         assert_eq!(result, "cp C:\\images\\photo.jpg /dest/photo.jpg");
+    }
+
+    #[test]
+    fn info_command_returns_expanded_output() {
+        let mut file = test_file();
+        file.width = Some(1920);
+        file.height = Some(1080);
+        let result =
+            execute_info_command("echo %u %w %h %l %F", &file, 1, 3, file.width, file.height)
+                .expect("info command should succeed");
+        assert_eq!(result, "2 1920 1080 3 C:\\images\\photo.jpg");
     }
 }
