@@ -11,12 +11,12 @@ keywords = ["image-viewer", "windows", "win32", "direct2d"]
 categories = ["command-line-utilities", "multimedia"]
 
 [dependencies]
-clap = { version = "4.6.5", features = ["derive"] }
+clap = { version = "4.6.7", features = ["derive"] }
 kamadak-exif = "0.6.1"
 walkdir = "2.5.0"
 natord = "1.0.9"
 windows-numerics = "0.3.1"
-ureq = "3.3.0"
+ureq = "3.5.0"
 
 [dependencies.windows]
 version = "0.62.2"
